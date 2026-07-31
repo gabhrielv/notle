@@ -18,9 +18,10 @@ import argparse
 from collections import defaultdict
 from datetime import datetime
 
-from ingest.clustering import assign_cluster, weigh
+from ingest.clustering import assign_cluster
 from ingest.pipeline import CLUSTER_WINDOW_HOURS, set_representatives
 from ingest.store import MAX_BOUND_PARAMS, D1Client, chunked
+from ranking.vectors import weigh
 
 PAGE = 2000
 

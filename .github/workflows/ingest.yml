@@ -39,4 +39,8 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
+          # The vector arithmetic lives under src/ because that is what the
+          # Worker bundles, and this job has to weigh a cluster exactly the way
+          # a request will. One definition, reached from both sides.
+          PYTHONPATH: src
         run: uv run --group ingest python -m ingest.pipeline

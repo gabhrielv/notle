@@ -19,12 +19,15 @@ one line, "cosine 0.71 against the story that opened the group", which is the
 kind of answer this project exists to be able to give.
 """
 
-import math
+from ranking.vectors import cosine
 
 # Deduplication compares IDF weighted vectors, not raw term frequencies. Under
 # raw TF two stories that share only `presidente`, `governo` and `pais` look
 # nearly identical, and those are exactly the terms with the highest document
 # count. What separates one event from another is the terms that are rare.
+#
+# The weighing itself lives in ranking.vectors, because the request side has to
+# agree with it exactly. See that module for why.
 
 # Calibrated against the 311 articles the corpus held on 2026-07-31, six portals
 # across one 24 hour window, by running this algorithm at every threshold from
@@ -45,50 +48,6 @@ import math
 # is a measurement, and it is expected to be measured again when the corpus is
 # large enough for the IDF to have moved.
 SIMILARITY_THRESHOLD = 0.30
-
-
-def idf(doc_count: int, total_docs: int) -> float:
-    """How much a term narrows the corpus down.
-
-    The floor on `doc_count` covers a term this run is the first to see. Its
-    count only rises after the writes, so without the floor the first appearance
-    of every new term would divide by zero.
-
-    On a corpus that is still empty this returns zero for everything, and a run
-    against it groups nothing. That is the honest answer rather than a gap: IDF
-    is corpus knowledge, and an empty corpus has none. The next hourly run has a
-    corpus and clusters normally.
-    """
-    return math.log(max(total_docs, 1) / max(doc_count, 1))
-
-
-def weigh(
-    frequencies: dict[str, float],
-    document_counts: dict[str, int],
-    total_docs: int,
-) -> dict[str, float]:
-    """Scales each term frequency by how rare the term is in the corpus."""
-    return {
-        term: frequency * idf(document_counts.get(term, 0), total_docs)
-        for term, frequency in frequencies.items()
-    }
-
-
-def cosine(a: dict[str, float], b: dict[str, float]) -> float:
-    """Cosine between two sparse vectors.
-
-    The shorter vector drives the loop, so the work follows the overlap rather
-    than the longer document.
-    """
-    smaller, larger = (a, b) if len(a) < len(b) else (b, a)
-    dot = sum(weight * larger[term] for term, weight in smaller.items() if term in larger)
-    if not dot:
-        return 0.0
-
-    magnitude = math.sqrt(sum(w * w for w in a.values())) * math.sqrt(
-        sum(w * w for w in b.values())
-    )
-    return dot / magnitude if magnitude else 0.0
 
 
 def assign_cluster(

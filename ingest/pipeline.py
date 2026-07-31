@@ -12,11 +12,13 @@ from datetime import UTC, datetime, timedelta
 
 import httpx
 
-from ingest.clustering import assign_cluster, weigh
+from ingest import candidates
+from ingest.clustering import assign_cluster
 from ingest.feeds import ArticleDraft, dedupe_by_url, parse_feed
 from ingest.normalize import lemmatize, term_frequencies
 from ingest.sources import SOURCES
 from ingest.store import MAX_BOUND_PARAMS, D1Client, chunked
+from ranking.vectors import weigh
 
 USER_AGENT = "notle/0.1 (+https://github.com/gabhrielv/notle)"
 FETCH_TIMEOUT = 25.0
@@ -186,9 +188,8 @@ def document_counts(client: D1Client, terms: set[str]) -> dict[str, int]:
     of them, so reading everything would eventually mean scanning six figures of
     rows every hour for an answer of constant size.
 
-    These are the counts from before this run's own articles are added. Holding
-    the IDF still for the whole pass is what keeps clustering independent of the
-    order the feeds happened to return in.
+    The counts are whatever the corpus holds when this is called, which is the
+    reason both callers are explicit about when they call it.
     """
     counts: dict[str, int] = {}
     for chunk in chunked(sorted(terms), MAX_BOUND_PARAMS):
@@ -286,6 +287,9 @@ def store(client: D1Client, plan: IngestionPlan, now: datetime) -> None:
 
     fetched_at = now.strftime("%Y-%m-%dT%H:%M:%SZ")
 
+    # Read before anything is written, so the IDF holds still for the whole
+    # pass. If it moved as the batch was processed, which articles grouped with
+    # which would depend on the order the feeds happened to answer in.
     anchors = recent_anchors(client, now)
     total_docs = corpus_size(client)
     counts = document_counts(
@@ -372,8 +376,28 @@ def store(client: D1Client, plan: IngestionPlan, now: datetime) -> None:
     )
 
 
-def run(client: D1Client | None = None, now: datetime | None = None) -> IngestionPlan:
-    """One full pass: read the feeds, work out what is new, store it."""
+def refresh_candidates(client: D1Client, now: datetime) -> int:
+    """Rebuilds the table the feed reads, after this run's writes have landed.
+
+    It runs last on purpose. The document counts it weighs with are the ones
+    including everything this run just stored, so the window a request will read
+    is measured against the corpus that actually exists rather than the one that
+    existed an hour ago.
+    """
+    rows = candidates.read_window(client, now)
+    if not rows:
+        return 0
+
+    total_docs = corpus_size(client)
+    counts = document_counts(client, {row["term"] for row in rows})
+
+    built = candidates.build(rows, counts, total_docs, now)
+    candidates.materialize(client, built)
+    return len(built)
+
+
+def run(client: D1Client | None = None, now: datetime | None = None) -> tuple[IngestionPlan, int]:
+    """One full pass: read the feeds, work out what is new, store it, publish it."""
     client = client or D1Client.from_env()
     now = now or datetime.now(UTC)
 
@@ -381,9 +405,15 @@ def run(client: D1Client | None = None, now: datetime | None = None) -> Ingestio
     drafts = fetch_drafts(SOURCES, source_ids, now=now)
     plan = prepare(drafts, known_urls(client, [d.url for d in drafts]))
     store(client, plan, now)
-    return plan
+    published = refresh_candidates(client, now)
+
+    return plan, published
 
 
 if __name__ == "__main__":
-    result = run()
-    print(f"{result.total_docs_delta} artigos novos, {len(result.document_counts)} termos tocados")
+    result, published = run()
+    print(
+        f"{result.total_docs_delta} artigos novos, "
+        f"{len(result.document_counts)} termos tocados, "
+        f"{published} clusters no feed"
+    )

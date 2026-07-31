@@ -1,0 +1,16 @@
+{
+  "name": "notle",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "pnpm --dir web build",
+    "dev": "pnpm build && wrangler dev",
+    "deploy": "pnpm build && wrangler deploy",
+    "vendor": "./tools/vendor/sync.sh sync",
+    "migrate:local": "wrangler d1 execute notle --local --file=migrations/0001_initial.sql",
+    "migrate:remote": "wrangler d1 execute notle --remote --file=migrations/0001_initial.sql"
+  },
+  "devDependencies": {
+    "wrangler": "^4.116.0"
+  }
+}

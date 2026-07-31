@@ -1,0 +1,9 @@
+# O wrangler traz o workerd, que é o runtime local, e o esbuild, que empacota.
+# Os dois baixam binário no postinstall, então sem isso um clone novo instala
+# sem o runtime e o `pnpm dev` falha sem dizer por quê.
+allowBuilds:
+  esbuild: true
+  workerd: true
+minimumReleaseAgeExclude:
+  - miniflare@4.20260730.0
+  - wrangler@4.116.0

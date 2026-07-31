@@ -25,6 +25,12 @@ dist/
 .vite/
 *.local
 
+# Dependências do Worker, reconstruídas por tools/vendor/sync.sh.
+# O pylock.toml é versionado; a árvore resolvida não.
+python_modules/
+.venv-workers/
+.wrangler/
+
 # Sistema operacional e editor
 .DS_Store
 Thumbs.db

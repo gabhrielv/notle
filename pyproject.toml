@@ -1,0 +1,36 @@
+[project]
+name = "notle"
+version = "0.1.0"
+description = "Agregador de noticias com feed personalizado e explicavel"
+requires-python = ">=3.12"
+# What the Worker bundle carries. Kept deliberately short: everything heavy
+# (spaCy, feedparser) belongs to the ingestion job, declared below. Vendored
+# into python_modules/ by tools/vendor/sync.sh, not by plain uv sync.
+dependencies = [
+    "fastapi",
+]
+
+[dependency-groups]
+# Runs only inside GitHub Actions. Never reaches the Worker bundle.
+ingest = [
+    "feedparser>=6.0.11",
+    "spacy>=3.8.0",
+    "httpx>=0.28.0",
+    "lxml>=5.3.0",
+]
+dev = [
+    "pytest>=8.3.0",
+    "ruff>=0.9.0",
+]
+
+[tool.pytest.ini_options]
+# src/ holds what the Worker bundles; the repo root holds the ingestion job.
+pythonpath = ["src", "."]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

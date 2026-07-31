@@ -1,0 +1,42 @@
+name: ingest
+
+# Reading six RSS feeds is a job of a few dozen seconds per hour. It does not
+# justify an always-on worker, and an always-on worker is exactly what nobody
+# gives away for free.
+on:
+  schedule:
+    # Off the hour: every scheduled job in the world fires at :00, and GitHub
+    # delays the queue accordingly.
+    - cron: "17 * * * *"
+  workflow_dispatch:
+
+# A slow run must not overlap the next hour's and double-count the corpus.
+concurrency:
+  group: ingest
+  cancel-in-progress: false
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      # spaCy and the Portuguese model are pinned in uv.lock, so this restores
+      # from cache instead of downloading the model on every run.
+      - name: Install dependencies
+        run: uv sync --group ingest --frozen
+
+      - name: Run the ingestion
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
+        run: uv run --group ingest python -m ingest.pipeline

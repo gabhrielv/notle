@@ -169,6 +169,10 @@ Três regras que vieram de furos encontrados no desenho original:
 
 **Tempo fora é assimétrico, e só a metade confiável é usada.** Um retorno em 5 segundos só tem uma explicação plausível, que é rejeição. Um retorno em 4 minutos tem dez explicações, e a mais provável nem é leitura: pode ser mensagem respondida, telefone no bolso, almoço. Por isso o retorno curto vale como sinal negativo, o retorno longo satura cedo em um valor pequeno, e acima de 5 minutos o evento é descartado como ausência de informação em vez de virar chute. No celular a confiabilidade é ainda menor, porque sair de um PWA pode suspender ou matar a aba.
 
+**O feed não devolve o que já foi respondido.** Esconder é a metade óbvia. A outra metade apareceu ao implementar: o perfil é construído a partir dos termos dos clusters curtidos, então o cluster curtido casa consigo mesmo melhor do que qualquer outra coisa pode casar. Medido, ele voltava ao topo com cosseno 0.213 num feed onde o segundo colocado tinha 0.023, quase dez vezes menos, e ficaria ali. Isso não é uma preferência que o leitor expressou, é o vetor se reconhecendo. É o mesmo laço da impressão visto de outro ângulo: o sistema mede a própria escolha e chama de gosto.
+
+Só sinal explícito entra nessa exclusão. Impressão, que chega na fatia 5, mede o que o ranking resolveu mostrar e não o que o leitor achou, e usá-la aqui esconderia matéria pelo crime de ter aparecido.
+
 Daí a regra geral:
 
 > **Sinal implícito ajusta, sinal explícito decide.** Nenhum sinal implícito sozinho pode reordenar duas notícias que têm sinal explícito diferente.

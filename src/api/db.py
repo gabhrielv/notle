@@ -5,6 +5,10 @@ lives here so that a change in how Pyodide exposes bindings costs one file
 instead of a search across the codebase.
 """
 
+# D1 binds at most 100 parameters per statement. Anything built from a list the
+# request did not choose the length of has to be split against this.
+MAX_BOUND_PARAMS = 100
+
 
 def _to_rows(result):
     """Turn a D1 result into a list of plain Python dicts.

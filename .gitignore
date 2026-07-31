@@ -1,0 +1,41 @@
+# Segredos e configuração de ambiente
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets.json
+credentials.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Node / front
+node_modules/
+dist/
+.vite/
+*.local
+
+# Sistema operacional e editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Dados locais e trabalho sujo
+*.db
+*.sqlite3
+data/
+dumps/
+scratch/
+notas/

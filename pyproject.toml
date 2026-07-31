@@ -17,11 +17,23 @@ ingest = [
     "spacy>=3.8.0",
     "httpx>=0.28.0",
     "lxml>=5.3.0",
+    # Pinned as a dependency rather than fetched by `spacy download`, so the
+    # model version is locked and CI needs no extra step.
+    "pt-core-news-sm",
+    # spaCy 3.8 still does `from click import NoSuchOption` in its CLI, and
+    # `import spacy` reaches the CLI through spacy/__init__.py. typer dropped
+    # click as a dependency in 0.27, so nothing pulls it in any more and even
+    # `spacy.load` dies. Declared here until spaCy catches up.
+    "click>=8.0.0",
 ]
+
 dev = [
     "pytest>=8.3.0",
     "ruff>=0.9.0",
 ]
+
+[tool.uv.sources]
+pt-core-news-sm = { url = "https://github.com/explosion/spacy-models/releases/download/pt_core_news_sm-3.8.0/pt_core_news_sm-3.8.0-py3-none-any.whl" }
 
 [tool.pytest.ini_options]
 # src/ holds what the Worker bundles; the repo root holds the ingestion job.

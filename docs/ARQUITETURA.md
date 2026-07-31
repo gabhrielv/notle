@@ -211,6 +211,34 @@ score = ( w_longo  * cos(perfil_longo,     item)
         - penalidade_de_impressao
 ```
 
+### O piso de recência, e o que ele significa
+
+Enquanto o onboarding não existe, todo visitante chega com perfil vazio, todo cosseno é exatamente zero e todos os candidatos empatam. A tela que decide se a pessoa fica seria ordenada por nada. Por isso a forma em produção soma um piso **dentro** do decay:
+
+```
+score = (W_GOSTO * cos(perfil, cluster) + W_RECENCIA) * decay(idade)
+```
+
+Com perfil vazio sobra `W_RECENCIA * decay`, que ordena por recência, e o cold start não precisa de nenhum ramo no código: é a mesma expressão com um termo zerado. Piso fora do decay viraria constante somada a todos, não ordenaria nada, e o empate voltaria.
+
+Só a razão entre as duas constantes importa, e ela tem uma leitura única. Como o decay multiplica a soma inteira, piso incluído, uma matéria com afinidade `c` ganha de outra sem afinidade e uma meia-vida mais nova exatamente quando `c > W_RECENCIA / W_GOSTO`. Ou seja:
+
+> **`W_RECENCIA` é o cosseno que vale uma meia-vida de idade.**
+
+O que torna a constante mensurável em vez de questão de gosto. Medindo contra os 252 candidatos da janela ao vivo, com perfis montados como um like monta, a média dos vetores dos clusters que o leitor guardou:
+
+| | cosseno perfil/candidato |
+|---|---|
+| máximo | 0.155 |
+| p99 | 0.069 |
+| p95 | 0.042 |
+| **p90** | **0.028** |
+| mediana | 0.001 |
+
+Fica muito abaixo dos 0.25 a 0.67 que duas matérias sobre o mesmo fato marcam entre si, e por um motivo simples: um perfil de poucos termos está sendo comparado com um vetor de manchete de uns 26, então a sobreposição é fina mesmo quando o assunto é o certo.
+
+`W_RECENCIA = 0.025` põe a barra logo abaixo do p90, então um candidato no décimo superior de afinidade vale doze horas de idade e o resto é ordenado por frescor. **O primeiro valor tentado foi 0.10**, escolhido por analogia com os cossenos entre artigos, e ele estava acima do p99: nada que o leitor curtiu conseguia superar uma matéria nova sobre coisa nenhuma. O perfil virava decoração e o feed, um relógio. A constante continua provisória e continua sendo trabalho da fatia 8, mas agora é medida com significado declarado em vez de número escolhido no olho.
+
 O produto escalar acontece **no banco**, não em Python. Com os vetores serializados num campo JSON, montar um feed exigiria trazer milhares de blobs pra memória do processo e parsear todos, o que é da ordem de centenas de milissegundos e alguns megabytes por request, num ambiente serverless onde tempo de execução é o que se paga, e que cresce linearmente até quebrar.
 
 Com `article_terms` indexada por `term`, a consulta manda os termos mais fortes do perfil e o banco toca só os artigos que compartilham algum deles. O trabalho passa a ser proporcional à sobreposição e não ao acervo. É indexação invertida clássica.

@@ -125,6 +125,17 @@ O resultado é plano em `[0.28, 0.30]`: 17 grupos, 11 deles cruzando portais, e 
 
 0.30 fica com folga dos dois lados em vez de na beira. É medida, não intuição, e vale ser medida de novo quando o corpus for grande o bastante para o IDF ter se mexido.
 
+**Confirmado contra um segundo lote, com o erro que ele revelou.** Um lote posterior de 247 artigos novos, de outra hora do dia e com muito mais cobertura policial regional, anexou 38 deles a clusters existentes e produziu duas fusões erradas que o primeiro conjunto não tinha. As duas são do mesmo tipo: notícia de polícia de cidades diferentes, que divide vocabulário pesado (`polícia`, `operação`, `preso`, `suspeito`) sem falar do mesmo fato.
+
+| limiar | anexam a cluster existente | pares suspeitos ainda juntos |
+|---|---|---|
+| **0.30** | **38** | 2 |
+| 0.33 | 25 | 2 |
+| 0.35 | 22 | 2 |
+| 0.38 | 17 | 0 |
+
+Os dois erros só se separam em 0.38, e chegar lá custa mais da metade das anexações corretas. Trocar 21 fusões certas por 2 erradas é o pior lado do negócio, então 0.30 fica. O que isso diz é que o erro mora na cauda e não na escolha do valor, e que a saída, se incomodar, não é mexer no limiar: é o simulador de personas da fatia 8, ou um sinal que o cosseno não vê, como localidade.
+
 Duas coisas que os dados reais mostraram e o desenho no papel não previa:
 
 **As duplicatas entre portais são bem menos parecidas do que a intuição sugere.** Elas vão de 0.667 ("Trump anuncia conclusão de acordo para desarmamento do Hamas" contra a versão da BBC) até 0.253, e a mediana fica perto de 0.35. Um limiar escolhido no olho, algo como 0.6 ou 0.7, capturaria menos de um terço delas.

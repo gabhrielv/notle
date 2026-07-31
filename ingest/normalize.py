@@ -8,9 +8,14 @@ story ranked where it did.
 """
 
 import functools
+import re
 from collections import Counter
 
 import spacy
+
+# Symbols and emoji clinging to the edge of a lemma. Kept off the inside so a
+# hyphenated name or a multi-word entity survives intact.
+_EDGE_NOISE = re.compile(r"^[^\w]+|[^\w]+$")
 
 MODEL = "pt_core_news_sm"
 
@@ -48,6 +53,39 @@ LIGHT_VERBS = frozenset(
     }
 )
 
+# Verbs of attribution. They mark who said a thing, never what the thing is,
+# and `afirmar` alone showed up 137 times across 311 real articles.
+REPORTING_VERBS = frozenset({"afirmar", "declarar", "informar", "apontar", "contar"})
+
+# Chrome the portals paste around the story rather than into it.
+#
+# `leia` is the tail of "Leia tambem" and "Leia mais", and it appeared in 129 of
+# 311 real articles, more document spread than any actual topic. Weekdays are
+# temporal furniture: nearly every article names one, so naming one separates
+# nothing. Months are deliberately absent from this list because `janeiro` is
+# part of `Rio de Janeiro`.
+CHROME = frozenset(
+    {
+        "leia",
+        "ler",
+        "segunda-feira",
+        "terça-feira",
+        "quarta-feira",
+        "quinta-feira",
+        "sexta-feira",
+        "sábado",
+        "domingo",
+    }
+)
+
+DISCARDED = LIGHT_VERBS | REPORTING_VERBS | CHROME
+
+# Function words that entity recognition sweeps into a span. spaCy hands back
+# `de Sao Paulo` as one location, and merging that verbatim produces a token
+# whose part of speech is the preposition's, which the content filter then
+# throws away. Trimming the edge first is what keeps the place name.
+SPAN_EDGE_POS = frozenset({"ADP", "DET"})
+
 # Short tokens are usually noise, but Brazilian news runs on acronyms: PT, PF,
 # STF, PIB. An all-caps original survives regardless of length.
 MIN_LENGTH = 3
@@ -57,11 +95,29 @@ MIN_LENGTH = 3
 def _nlp():
     """Loads the model once per process.
 
-    The parser and the entity recognizer cost time and buy nothing here: the
-    rule-based lemmatizer needs the tagger and the morphologizer, not a
-    dependency tree.
+    The dependency parser is dead weight for lemmas, but entity recognition
+    earns its cost: it is what holds `Sao Paulo` together as one term instead
+    of two meaningless ones. This runs in the ingestion job, where time is
+    free, never inside a request.
     """
-    return spacy.load(MODEL, disable=["parser", "ner"])
+    return spacy.load(MODEL, disable=["parser"])
+
+
+def _merge_entities(doc) -> None:
+    """Collapses multi-word entities into single tokens, in place.
+
+    The merged token takes the span's surface text as its lemma rather than the
+    concatenation of its parts' lemmas. Lemmatizing inside a name expands the
+    contraction in `Rio Grande do Sul` into `rio grande de o sul`, which is not
+    a phrase any reader would recognize as the state they live in.
+    """
+    with doc.retokenize() as retokenizer:
+        for entity in doc.ents:
+            span = entity
+            while len(span) > 1 and span[0].pos_ in SPAN_EDGE_POS:
+                span = span[1:]
+            if len(span) > 1:
+                retokenizer.merge(span, attrs={"LEMMA": span.text})
 
 
 def lemmatize(text: str) -> list[str]:
@@ -69,13 +125,20 @@ def lemmatize(text: str) -> list[str]:
     if not text or not text.strip():
         return []
 
+    doc = _nlp()(text)
+    _merge_entities(doc)
+
     lemmas = []
-    for token in _nlp()(text):
+    for token in doc:
         if token.pos_ not in CONTENT_POS:
             continue
 
-        lemma = token.lemma_.lower().strip()
-        if not lemma or lemma in LIGHT_VERBS:
+        lemma = _EDGE_NOISE.sub("", token.lemma_.lower().strip())
+        if not lemma or lemma in DISCARDED:
+            continue
+        # A portal prefixes summaries with an emoji, and it rode into an entity
+        # span. A term the reader cannot pronounce explains nothing.
+        if not any(character.isalpha() for character in lemma):
             continue
         if len(lemma) < MIN_LENGTH and not token.text.isupper():
             continue

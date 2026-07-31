@@ -66,6 +66,60 @@ class TestLemmatize:
         assert "copom" in lemmas
         assert "selic" in lemmas
 
+    def test_link_bait_boilerplate_is_not_a_term(self):
+        """`Leia também` showed up in 129 of 311 real articles.
+
+        It is navigation chrome the portal pastes into every summary, so it
+        describes the template and not the story.
+        """
+        lemmas = lemmatize("Copom mantém a Selic. Leia também: o que muda no seu bolso")
+
+        assert "leia" not in lemmas
+        assert "ler" not in lemmas
+        assert "selic" in lemmas
+
+    def test_weekday_names_are_not_terms(self):
+        """Nearly every article names a weekday, so it separates nothing."""
+        lemmas = lemmatize("O Copom decidiu na quinta-feira manter a taxa")
+
+        assert "quinta-feira" not in lemmas
+        assert "copom" in lemmas
+
+    def test_reporting_verbs_are_not_terms(self):
+        """Same class as `dizer`: it marks attribution, not subject."""
+        lemmas = lemmatize("O ministro afirmou que a meta de inflação será cumprida")
+
+        assert "afirmar" not in lemmas
+        assert "inflação" in lemmas
+
+    def test_multiword_place_names_stay_together(self):
+        """Split apart, the card would read: you follow `são`, `paulo`.
+
+        Real feeds produced `são` 96 times and `paulo` 114 times as separate
+        terms, which is two meaningless dimensions instead of one real one.
+        """
+        lemmas = lemmatize("O governo de São Paulo anunciou o novo plano")
+
+        assert "são paulo" in lemmas
+        assert "são" not in lemmas
+
+    def test_contractions_are_not_expanded_inside_a_place_name(self):
+        """Lemmatizing inside the span turns `do` into `de o`.
+
+        Real feeds produced `rio grande de o sul`, which is not a phrase any
+        reader would recognize as the state they live in.
+        """
+        lemmas = lemmatize("O governo do Rio Grande do Sul decretou emergência")
+
+        assert "rio grande do sul" in lemmas
+        assert "rio grande de o sul" not in lemmas
+
+    def test_emoji_never_become_terms(self):
+        """A portal prefixes summaries with an emoji, and it rode into a span."""
+        lemmas = lemmatize("💲 Quanto custa a cesta básica em São Paulo")
+
+        assert all("💲" not in lemma for lemma in lemmas)
+
 
 class TestTermFrequencies:
     def test_frequencies_sum_to_one(self):

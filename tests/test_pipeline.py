@@ -27,10 +27,14 @@ class FakeClient:
         self.rows = rows or []
         self.rows_by_sql = rows_by_sql or {}
         self.inserts = []
-        self.queries = []
+        self.calls = []
+
+    @property
+    def queries(self):
+        return [sql for sql, _ in self.calls]
 
     def query(self, sql, params=None):
-        self.queries.append(sql)
+        self.calls.append((sql, list(params or [])))
         for fragment, rows in self.rows_by_sql.items():
             if fragment in sql:
                 return rows
@@ -38,7 +42,15 @@ class FakeClient:
 
     def insert_many(self, table, columns, rows):
         self.inserts.append((table, columns, list(rows)))
-        self.queries.append(f"INSERT INTO {table}")
+        self.calls.append((f"INSERT INTO {table}", list(rows)))
+
+    def rows_written(self, table):
+        """The rows handed to insert_many for one table."""
+        return [row for name, _, rows in self.inserts if name == table for row in rows]
+
+    def params_matching(self, fragment):
+        """The bound parameters of every statement whose SQL contains `fragment`."""
+        return [params for sql, params in self.calls if fragment in sql]
 
 
 class TestEnsureSources:
@@ -86,8 +98,14 @@ class TestFetchDrafts:
         assert fetch_drafts(sources, {"https://a/rss": 1}, get=explode) == []
 
 
-def draft(url: str, title: str, summary: str = "") -> ArticleDraft:
-    return ArticleDraft(1, title, summary, url, "2026-07-31T12:00:00Z")
+def draft(
+    url: str,
+    title: str,
+    summary: str = "",
+    published_at: str = "2026-07-31T12:00:00Z",
+    source_id: int = 1,
+) -> ArticleDraft:
+    return ArticleDraft(source_id, title, summary, url, published_at)
 
 
 class TestPrepare:
@@ -205,3 +223,192 @@ class TestStore:
         store(client, prepare([], known_urls=set()), datetime(2026, 7, 31, tzinfo=UTC))
 
         assert client.queries == []
+
+
+NOW = datetime(2026, 7, 31, 12, tzinfo=UTC)
+
+# The three headlines the architecture uses to state the problem, as the portals
+# actually write them.
+COPOM = [
+    draft(
+        "https://g1/copom",
+        "Copom mantém a Selic em 10,5% ao ano",
+        published_at="2026-07-31T09:00:00Z",
+        source_id=1,
+    ),
+    draft(
+        "https://bbc/selic",
+        "Banco Central decide manter a taxa Selic em 10,5%",
+        published_at="2026-07-31T09:20:00Z",
+        source_id=2,
+    ),
+    draft(
+        "https://cnn/juros",
+        "Selic: Copom mantém os juros em 10,5%",
+        published_at="2026-07-31T09:40:00Z",
+        source_id=3,
+    ),
+]
+
+
+def clustering_client(drafts, anchors=(), next_cluster_id=100, total_docs=311):
+    """A client canned for the reads `store` makes on the way to clustering.
+
+    `terms` comes back empty, so every term gets the same IDF and the cosine
+    falls back to comparing raw frequencies. That keeps these tests about the
+    grouping rather than about which words the corpus happens to consider rare;
+    the weighting itself is covered in test_clustering.py.
+    """
+    return FakeClient(
+        rows_by_sql={
+            "total_docs FROM corpus_stats": [{"total_docs": total_docs}],
+            "FROM terms WHERE term IN": [],
+            "JOIN article_terms": list(anchors),
+            "MAX(id)": [{"next_id": next_cluster_id}],
+            "SELECT id, url FROM articles": [
+                {"id": 500 + i, "url": d.url} for i, d in enumerate(drafts)
+            ],
+        }
+    )
+
+
+def cluster_of(client, url):
+    """The cluster id the article with this URL was written under."""
+    for row in client.rows_written("articles"):
+        if row[4] == url:
+            return row[1]
+    raise AssertionError(f"{url} was never written")
+
+
+class TestStoreClustering:
+    def test_three_portals_covering_one_event_share_a_cluster(self):
+        """The whole point of the slice.
+
+        Ungrouped, these three take the top of the feed with tied scores, and a
+        like on one pushes the other two up with it.
+        """
+        plan = prepare(COPOM, known_urls=set())
+        client = clustering_client(COPOM)
+
+        store(client, plan, NOW)
+
+        assert len({cluster_of(client, d.url) for d in COPOM}) == 1
+
+    def test_a_cluster_opened_this_run_catches_the_rest_of_the_run(self):
+        """Three portals covering one event usually land in a single hourly read.
+
+        Only the first of them can match against the database, because the other
+        two are in the same batch. If the candidate list did not grow as the
+        batch was processed, dedup would only ever work across runs.
+        """
+        plan = prepare(COPOM, known_urls=set())
+        client = clustering_client(COPOM, anchors=[])
+
+        store(client, plan, NOW)
+
+        assert len(client.rows_written("clusters")) == 1
+
+    def test_the_earliest_article_opens_the_cluster(self):
+        """Feed order would hand the anchor to whichever portal was read first.
+
+        The drafts are deliberately passed newest first here, so publication
+        order is the only thing that can produce the expected answer.
+        """
+        reversed_order = list(reversed(COPOM))
+        plan = prepare(reversed_order, known_urls=set())
+        client = clustering_client(reversed_order)
+
+        store(client, plan, NOW)
+
+        first_seen_at = client.rows_written("clusters")[0][1]
+        assert first_seen_at == "2026-07-31T09:00:00Z"
+
+    def test_the_cluster_points_at_the_article_that_opened_it(self):
+        """The anchor is what every later article is matched against.
+
+        A cluster left pointing at nothing is invisible to the window query and
+        silently stops gathering coverage, so the assignment is not optional.
+        `clustering_client` hands out ids from 500 in the order it is given, and
+        the G1 story is the oldest of the three.
+        """
+        plan = prepare(COPOM, known_urls=set())
+        client = clustering_client(COPOM)
+
+        store(client, plan, NOW)
+
+        g1_article_id = 500
+        assignments = client.params_matching("UPDATE clusters SET representative_article_id")
+        assert assignments == [[100, g1_article_id, 100]]
+
+    def test_a_new_cluster_is_sized_by_what_this_run_put_in_it(self):
+        plan = prepare(COPOM, known_urls=set())
+        client = clustering_client(COPOM)
+
+        store(client, plan, NOW)
+
+        _, _, size = client.rows_written("clusters")[0]
+        assert size == 3
+
+    def test_an_unrelated_story_opens_its_own_cluster(self):
+        drafts = [
+            *COPOM,
+            draft(
+                "https://g1/futebol",
+                "Grêmio perde para o Bolívar e é eliminado da Copa Sul-Americana",
+                published_at="2026-07-31T10:00:00Z",
+            ),
+        ]
+        plan = prepare(drafts, known_urls=set())
+        client = clustering_client(drafts)
+
+        store(client, plan, NOW)
+
+        assert len(client.rows_written("clusters")) == 2
+        assert cluster_of(client, "https://g1/futebol") != cluster_of(client, "https://g1/copom")
+
+    def test_an_article_joins_a_cluster_an_earlier_run_opened(self):
+        """A story keeps being republished for hours after it breaks.
+
+        The rewrite that arrives next hour has to find the cluster from last
+        hour, not start a second one for the same event.
+        """
+        latecomer = [
+            draft(
+                "https://folha/selic",
+                "Copom mantém a Selic em 10,5% ao ano, decide Banco Central",
+                published_at="2026-07-31T11:00:00Z",
+                source_id=4,
+            )
+        ]
+        anchors = [
+            {"cluster_id": 42, "term": term, "tf": tf}
+            for term, tf in {"copom": 0.25, "manter": 0.25, "selic": 0.25, "ano": 0.25}.items()
+        ]
+        plan = prepare(latecomer, known_urls=set())
+        client = clustering_client(latecomer, anchors=anchors)
+
+        store(client, plan, NOW)
+
+        assert client.rows_written("clusters") == []
+        assert cluster_of(client, "https://folha/selic") == 42
+
+    def test_joining_an_existing_cluster_grows_its_size(self):
+        anchors = [
+            {"cluster_id": 42, "term": term, "tf": tf}
+            for term, tf in {"copom": 0.25, "manter": 0.25, "selic": 0.25, "ano": 0.25}.items()
+        ]
+        plan = prepare(COPOM, known_urls=set())
+        client = clustering_client(COPOM, anchors=anchors)
+
+        store(client, plan, NOW)
+
+        growth = client.params_matching("SET size = size +")
+        assert growth == [[3, 42]]
+
+    def test_the_window_asks_for_one_day(self):
+        plan = prepare(COPOM, known_urls=set())
+        client = clustering_client(COPOM)
+
+        store(client, plan, NOW)
+
+        assert client.params_matching("JOIN article_terms") == [["2026-07-30T12:00:00Z"]]

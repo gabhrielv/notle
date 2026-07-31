@@ -103,6 +103,36 @@ flowchart TD
 
 Sem agrupamento, os três ocupam o topo do feed com pontuação empatada, e a primeira impressão do demo é de sistema quebrado. Pior: se o usuário curte um, o perfil reforça aqueles termos e os outros dois sobem mais ainda. O feed rankeia clusters e mostra "também em BBC e CNN".
 
+**O cluster tem âncora fixa, não centroide.** O vetor comparado é o do artigo que abriu o grupo, escrito uma vez e nunca reescrito. Um centroide aguentaria melhor uma primeira matéria magra, mas deriva: num evento com vinte matérias em 24 horas o centro vai ficando genérico e a fronteira vai relaxando até cobertura vizinha cair dentro. Com âncora fixa, todo candidato precisa parecer com a matéria original, e a explicação cabe numa linha, "cosseno 0.71 contra a matéria que abriu o grupo". `clusters.representative_article_id` é onde ela mora, e o mesmo campo decide qual título o card mostra.
+
+**A comparação é sobre vetores ponderados por IDF, não sobre TF cru.** Em TF cru, duas matérias que só dividem `presidente`, `governo` e `país` parecem a mesma história, e esses são justamente os termos de maior `doc_count`. Dedup precisa dos termos que discriminam. As contagens são lidas uma vez no começo da passada, antes do próprio run somar as suas, para que a ordem em que os feeds responderam não mude quem agrupa com quem.
+
+### Como o limiar foi escolhido
+
+`limiar_cluster = 0.30`, medido contra os 311 artigos que o corpus tinha em 31/07/2026, seis portais numa janela de 24 horas, rodando o algoritmo em todo limiar de 0.20 a 0.45 e lendo grupo por grupo o que cada um produziu.
+
+| limiar | clusters | multi-artigo | artigos agrupados |
+|---|---|---|---|
+| 0.27 | 266 | 20 | 65 |
+| **0.28 a 0.30** | **269** | **17** | **59** |
+| 0.31 | 270 | 17 | 58 |
+| 0.37 a 0.40 | 277 | 12 | 46 |
+
+O resultado é plano em `[0.28, 0.30]`: 17 grupos, 11 deles cruzando portais, e nenhuma fusão errada entre eles. São as bordas que fixam o valor dentro dessa faixa, não o meio:
+
+- Em **0.27** entra o primeiro falso positivo. "Unidade Popular oficializa candidaturas ao governo e Senado no Pará" cola em "PCdoB oficializa apoio à candidatura de Lula" com cosseno 0.272, porque dividem `oficializar`, `candidatura` e `partido`. São eventos diferentes.
+- Em **0.31** começa a perder duplicata real: Santander em 0.337, os imigrantes em Ceuta em 0.310, o fio da Fifa em 0.301.
+
+0.30 fica com folga dos dois lados em vez de na beira. É medida, não intuição, e vale ser medida de novo quando o corpus for grande o bastante para o IDF ter se mexido.
+
+Duas coisas que os dados reais mostraram e o desenho no papel não previa:
+
+**As duplicatas entre portais são bem menos parecidas do que a intuição sugere.** Elas vão de 0.667 ("Trump anuncia conclusão de acordo para desarmamento do Hamas" contra a versão da BBC) até 0.253, e a mediana fica perto de 0.35. Um limiar escolhido no olho, algo como 0.6 ou 0.7, capturaria menos de um terço delas.
+
+**O topo absoluto da distribuição não é duplicata, é template.** Os 21 pares mais parecidos do corpus, todos entre 0.79 e 0.88, são a previsão do tempo do G1 publicada uma vez por cidade. São 21 dos 311 artigos, 6,7% do corpus, e agrupam num cluster só em qualquer limiar de 0.20 a 0.45. Isso é acerto: sem agrupar, o feed mostra 21 cards de previsão do tempo, que é literalmente a repetição que esta fatia existe pra remover. A consequência é no card, não no algoritmo: "também em BBC e CNN" não serve pra um grupo de um portal só, então a linha lista as fontes distintas e, quando há uma só, mostra a contagem.
+
+Um efeito colateral apareceu no caminho e virou correção à parte: manchete brasileira separa assunto de afirmação com dois pontos, e o reconhecimento de entidade lia através deles. "Selic: Copom mantém os juros" voltava como uma entidade só e virava o termo `selic: copom`, que nenhum outro artigo pode compartilhar. Nas três manchetes de exemplo acima, isso sozinho movia o cosseno de 0.29 pra 0.75, de um lado do limiar pro outro. O span agora é quebrado na pontuação antes de fundir, e um nome que esteja depois dos dois pontos continua fundindo sozinho.
+
 ## Sinais de interação
 
 O sistema mede quatro etapas de um funil, e cada uma filtra a anterior:

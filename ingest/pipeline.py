@@ -6,20 +6,26 @@ is what lets the part with a knowable right answer be tested without a network
 or a credential.
 """
 
-from collections import Counter
+from collections import Counter, defaultdict
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import httpx
 
-from ingest.clustering import assign_cluster
+from ingest.clustering import assign_cluster, weigh
 from ingest.feeds import ArticleDraft, dedupe_by_url, parse_feed
 from ingest.normalize import lemmatize, term_frequencies
 from ingest.sources import SOURCES
-from ingest.store import MAX_BOUND_PARAMS, D1Client
+from ingest.store import MAX_BOUND_PARAMS, D1Client, chunked
 
 USER_AGENT = "notle/0.1 (+https://github.com/gabhrielv/notle)"
 FETCH_TIMEOUT = 25.0
+
+# How far back a story can still gather later coverage. A day is roughly how
+# long the same event keeps being republished; past that, an article about the
+# same subject is a follow up rather than the same story, and it deserves its
+# own card.
+CLUSTER_WINDOW_HOURS = 24
 
 
 @dataclass(frozen=True)
@@ -165,6 +171,104 @@ def _bump_document_counts(client: D1Client, counts: Counter) -> None:
         )
 
 
+def corpus_size(client: D1Client) -> int:
+    """How many documents the IDF is measured against."""
+    rows = client.query("SELECT total_docs FROM corpus_stats WHERE id = 1")
+    return rows[0]["total_docs"] if rows else 0
+
+
+def document_counts(client: D1Client, terms: set[str]) -> dict[str, int]:
+    """Reads doc_count for the terms this run actually compares.
+
+    Selecting the whole table would be one request instead of a few dozen, and
+    that is the cheaper trade only while the corpus is small. `terms` grows with
+    the vocabulary and never shrinks, while a single run touches a few thousand
+    of them, so reading everything would eventually mean scanning six figures of
+    rows every hour for an answer of constant size.
+
+    These are the counts from before this run's own articles are added. Holding
+    the IDF still for the whole pass is what keeps clustering independent of the
+    order the feeds happened to return in.
+    """
+    counts: dict[str, int] = {}
+    for chunk in chunked(sorted(terms), MAX_BOUND_PARAMS):
+        placeholders = ", ".join("?" * len(chunk))
+        rows = client.query(
+            f"SELECT term, doc_count FROM terms WHERE term IN ({placeholders})",
+            chunk,
+        )
+        counts.update({row["term"]: row["doc_count"] for row in rows})
+    return counts
+
+
+def recent_anchors(client: D1Client, now: datetime) -> list[tuple[int, dict[str, float]]]:
+    """The raw term frequencies of the article that opened each recent cluster.
+
+    A cluster whose representative is still unset is left out rather than
+    matched against nothing. That is the safe direction: if a run dies between
+    inserting the articles and pointing the clusters at them, the worst the next
+    run can do is open a second cluster for a story, never merge two stories
+    that do not belong together.
+    """
+    since = (now - timedelta(hours=CLUSTER_WINDOW_HOURS)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    rows = client.query(
+        "SELECT c.id AS cluster_id, t.term, t.tf "
+        "FROM clusters c "
+        "JOIN article_terms t ON t.article_id = c.representative_article_id "
+        "WHERE c.first_seen_at >= ? AND c.representative_article_id IS NOT NULL",
+        [since],
+    )
+
+    anchors: dict[int, dict[str, float]] = defaultdict(dict)
+    for row in rows:
+        anchors[row["cluster_id"]][row["term"]] = row["tf"]
+    return list(anchors.items())
+
+
+def set_representatives(client: D1Client, representatives: dict[int, int]) -> None:
+    """Points each cluster opened in this run at the article that opened it.
+
+    The article id only exists after its insert, so this cannot ride along with
+    the cluster row and has to be a second pass. One statement per cluster would
+    be hundreds of round trips, so the assignments travel as a CASE.
+    """
+    if not representatives:
+        return
+
+    # Three bound parameters per cluster: the id twice in the CASE, once in the
+    # IN. Without the IN, every other cluster in the table would match the
+    # UPDATE and have its representative set to NULL by the CASE falling through.
+    for chunk in chunked(list(representatives.items()), MAX_BOUND_PARAMS // 3):
+        cases = " ".join(["WHEN ? THEN ?"] * len(chunk))
+        placeholders = ", ".join("?" * len(chunk))
+        params = [value for pair in chunk for value in pair] + [cid for cid, _ in chunk]
+        client.query(
+            f"UPDATE clusters SET representative_article_id = CASE id {cases} END "
+            f"WHERE id IN ({placeholders})",
+            params,
+        )
+
+
+def _grow_clusters(client: D1Client, growth: Counter) -> None:
+    """Adds this run's new members onto the size of clusters that already existed.
+
+    Grouped by how many members each gained, so the number of requests follows
+    the distinct increments, which is almost always one or two, instead of the
+    number of clusters touched.
+    """
+    by_increment: dict[int, list[int]] = defaultdict(list)
+    for cluster_id, gained in growth.items():
+        by_increment[gained].append(cluster_id)
+
+    for gained, cluster_ids in by_increment.items():
+        for chunk in chunked(cluster_ids, MAX_BOUND_PARAMS - 1):
+            placeholders = ", ".join("?" * len(chunk))
+            client.query(
+                f"UPDATE clusters SET size = size + ? WHERE id IN ({placeholders})",
+                [gained, *chunk],
+            )
+
+
 def store(client: D1Client, plan: IngestionPlan, now: datetime) -> None:
     """Writes a prepared plan to the corpus.
 
@@ -182,18 +286,41 @@ def store(client: D1Client, plan: IngestionPlan, now: datetime) -> None:
 
     fetched_at = now.strftime("%Y-%m-%dT%H:%M:%SZ")
 
+    anchors = recent_anchors(client, now)
+    total_docs = corpus_size(client)
+    counts = document_counts(
+        client,
+        {term for article in plan.articles for term in article.term_frequencies}
+        | {term for _, anchor in anchors for term in anchor},
+    )
+    candidates = [(cluster_id, weigh(anchor, counts, total_docs)) for cluster_id, anchor in anchors]
+
     rows = client.query("SELECT COALESCE(MAX(id), 0) + 1 AS next_id FROM clusters")
     next_cluster_id = rows[0]["next_id"] if rows else 1
 
-    cluster_rows = []
-    article_rows = []
-    for offset, article in enumerate(plan.articles):
-        draft = article.draft
-        cluster_id = assign_cluster(draft, article.term_frequencies, [])
-        if cluster_id is None:
-            cluster_id = next_cluster_id + offset
-            cluster_rows.append((cluster_id, draft.published_at, 1))
+    # Oldest first, so the portal that broke the story opens the cluster and the
+    # rewrites attach to it. Feed order would hand the anchor to whichever
+    # portal happened to be read first.
+    arriving = sorted(plan.articles, key=lambda article: article.draft.published_at)
 
+    opened: dict[int, tuple[str, str]] = {}
+    members: Counter = Counter()
+    article_rows = []
+    for article in arriving:
+        draft = article.draft
+        vector = weigh(article.term_frequencies, counts, total_docs)
+        cluster_id = assign_cluster(vector, candidates)
+
+        if cluster_id is None:
+            cluster_id = next_cluster_id
+            next_cluster_id += 1
+            opened[cluster_id] = (draft.published_at, draft.url)
+            # A cluster opened in this run has to be able to catch the rewrites
+            # that arrive later in the same run. Three portals covering one
+            # event usually land in a single hourly read.
+            candidates.append((cluster_id, vector))
+
+        members[cluster_id] += 1
         article_rows.append(
             (
                 draft.source_id,
@@ -206,6 +333,14 @@ def store(client: D1Client, plan: IngestionPlan, now: datetime) -> None:
             )
         )
 
+    cluster_rows = [
+        (cluster_id, first_seen_at, members[cluster_id])
+        for cluster_id, (first_seen_at, _) in opened.items()
+    ]
+    grown = Counter(
+        {cluster_id: gained for cluster_id, gained in members.items() if cluster_id not in opened}
+    )
+
     client.insert_many("clusters", ("id", "first_seen_at", "size"), cluster_rows)
     client.insert_many(
         "articles",
@@ -214,6 +349,13 @@ def store(client: D1Client, plan: IngestionPlan, now: datetime) -> None:
     )
 
     ids = _article_ids(client, [a.draft.url for a in plan.articles])
+
+    set_representatives(
+        client,
+        {cluster_id: ids[url] for cluster_id, (_, url) in opened.items() if url in ids},
+    )
+    _grow_clusters(client, grown)
+
     term_rows = [
         (ids[a.draft.url], term, tf)
         for a in plan.articles

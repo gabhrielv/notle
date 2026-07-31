@@ -120,6 +120,33 @@ class TestLemmatize:
 
         assert all("💲" not in lemma for lemma in lemmas)
 
+    def test_a_headline_colon_is_a_boundary_not_part_of_a_name(self):
+        """Entity recognition reads straight through the colon.
+
+        The span came back as `Selic: Copom` and merged into one term that no
+        other article could ever share, so the story stopped matching the same
+        story from another portal. Against the three headlines the architecture
+        uses as its example, this alone moved the cosine from 0.29 to 0.75, one
+        side of the clustering threshold to the other.
+        """
+        lemmas = lemmatize("Selic: Copom mantém os juros em 10,5%")
+
+        assert "selic" in lemmas
+        assert "copom" in lemmas
+        assert "selic: copom" not in lemmas
+
+    def test_a_name_after_the_colon_still_merges(self):
+        """Splitting must not cost what merging was for.
+
+        The segment on each side of the punctuation is still offered to the
+        merge, so a multi-word name keeps its single term.
+        """
+        lemmas = lemmatize("Acústico: Charlie Brown Jr faz show no Rio de Janeiro")
+
+        assert "charlie brown jr" in lemmas
+        assert "rio de janeiro" in lemmas
+        assert "acústico" in lemmas
+
 
 class TestTermFrequencies:
     def test_frequencies_sum_to_one(self):

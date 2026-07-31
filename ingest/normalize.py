@@ -103,6 +103,31 @@ def _nlp():
     return spacy.load(MODEL, disable=["parser"])
 
 
+def _segments(entity):
+    """Splits an entity span at punctuation.
+
+    Headlines separate the subject from the statement with a colon, and entity
+    recognition reads straight through it. "Selic: Copom mantem os juros" comes
+    back as a single entity, and merging it verbatim produces the term
+    `selic: copom`, which no other article can ever share. The story then fails
+    to group with the same story from another portal, and it fails for a reason
+    invisible on the screen.
+
+    Splitting first leaves `selic` and `copom` as the two terms that carry it,
+    and a name that happens to sit after the colon still merges on its own.
+    """
+    start = 0
+    for index, token in enumerate(entity):
+        if token.pos_ != "PUNCT":
+            continue
+        if index > start:
+            yield entity[start:index]
+        start = index + 1
+
+    if start < len(entity):
+        yield entity[start:]
+
+
 def _merge_entities(doc) -> None:
     """Collapses multi-word entities into single tokens, in place.
 
@@ -113,11 +138,11 @@ def _merge_entities(doc) -> None:
     """
     with doc.retokenize() as retokenizer:
         for entity in doc.ents:
-            span = entity
-            while len(span) > 1 and span[0].pos_ in SPAN_EDGE_POS:
-                span = span[1:]
-            if len(span) > 1:
-                retokenizer.merge(span, attrs={"LEMMA": span.text})
+            for span in _segments(entity):
+                while len(span) > 1 and span[0].pos_ in SPAN_EDGE_POS:
+                    span = span[1:]
+                if len(span) > 1:
+                    retokenizer.merge(span, attrs={"LEMMA": span.text})
 
 
 def lemmatize(text: str) -> list[str]:

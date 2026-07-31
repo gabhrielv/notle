@@ -1,0 +1,27 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "notle",
+  "main": "src/entry.py",
+  "compatibility_date": "2025-06-01",
+  "compatibility_flags": ["python_workers"],
+
+  // One Worker serves both the built front and the API. Same origin, so no
+  // CORS and no preflight on a request that is already personalized.
+  "assets": {
+    "directory": "./web/dist",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "notle",
+      "database_id": "PLACEHOLDER_ATE_O_BANCO_SER_CRIADO"
+    }
+  ],
+
+  "observability": {
+    "enabled": true
+  }
+}

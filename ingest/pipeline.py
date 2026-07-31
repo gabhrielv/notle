@@ -16,7 +16,7 @@ from ingest.clustering import assign_cluster
 from ingest.feeds import ArticleDraft, dedupe_by_url, parse_feed
 from ingest.normalize import lemmatize, term_frequencies
 from ingest.sources import SOURCES
-from ingest.store import D1Client
+from ingest.store import MAX_BOUND_PARAMS, D1Client
 
 USER_AGENT = "notle/0.1 (+https://github.com/gabhrielv/notle)"
 FETCH_TIMEOUT = 25.0
@@ -63,13 +63,44 @@ def prepare(drafts: list[ArticleDraft], known_urls: set[str]) -> IngestionPlan:
     return IngestionPlan(articles=articles, document_counts=document_counts)
 
 
-def fetch_drafts(sources=SOURCES, now: datetime | None = None, get=None) -> list[ArticleDraft]:
+def ensure_sources(client, sources=SOURCES) -> dict[str, int]:
+    """Registers any feed the corpus does not know yet.
+
+    Returns feed_url to the id the database actually assigned. The id has to
+    come back from the database rather than from the feed's position in
+    `sources`: articles.source_id is a foreign key, and a position only matches
+    an id for as long as nobody reorders the file.
+
+    feed_url is unique and the insert ignores conflicts, so this is idempotent
+    and runs every hour without accumulating duplicates.
+    """
+    registered_at = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    client.insert_many(
+        "sources",
+        ("name", "feed_url", "homepage_url", "created_at"),
+        [(s.name, s.feed_url, s.homepage_url, registered_at) for s in sources],
+    )
+
+    rows = client.query("SELECT id, feed_url FROM sources")
+    return {row["feed_url"]: row["id"] for row in rows}
+
+
+def fetch_drafts(
+    sources=SOURCES,
+    source_ids: dict[str, int] | None = None,
+    now: datetime | None = None,
+    get=None,
+) -> list[ArticleDraft]:
     """Reads every feed. A portal that fails is skipped, not fatal."""
     now = now or datetime.now(UTC)
     get = get or _http_get
+    source_ids = source_ids or {}
 
     drafts: list[ArticleDraft] = []
-    for source_id, source in enumerate(sources, start=1):
+    for source in sources:
+        source_id = source_ids.get(source.feed_url)
+        if source_id is None:
+            continue
         try:
             drafts.extend(parse_feed(get(source.feed_url), source_id, now))
         except Exception:
@@ -104,26 +135,67 @@ def known_urls(client: D1Client, urls: list[str]) -> set[str]:
     return found
 
 
+def _article_ids(client: D1Client, urls: list[str]) -> dict[str, int]:
+    """Maps URL to the id the corpus assigned, reading back in bounded chunks."""
+    found: dict[str, int] = {}
+    for start in range(0, len(urls), 100):
+        window = urls[start : start + 100]
+        placeholders = ", ".join("?" * len(window))
+        rows = client.query(
+            f"SELECT id, url FROM articles WHERE url IN ({placeholders})",
+            window,
+        )
+        found.update({row["url"]: row["id"] for row in rows})
+    return found
+
+
+def _bump_document_counts(client: D1Client, counts: Counter) -> None:
+    """Adds this run's document counts onto the corpus totals."""
+    items = list(counts.items())
+    rows_per_request = MAX_BOUND_PARAMS // 2
+
+    for start in range(0, len(items), rows_per_request):
+        chunk = items[start : start + rows_per_request]
+        values = ", ".join(["(?, ?)"] * len(chunk))
+        params = [value for pair in chunk for value in pair]
+        client.query(
+            f"INSERT INTO terms (term, doc_count) VALUES {values} "
+            "ON CONFLICT(term) DO UPDATE SET doc_count = doc_count + excluded.doc_count",
+            params,
+        )
+
+
 def store(client: D1Client, plan: IngestionPlan, now: datetime) -> None:
-    """Writes a prepared plan to the corpus."""
+    """Writes a prepared plan to the corpus.
+
+    Everything is batched. The first version issued four HTTP calls per
+    article, which on the opening run meant roughly 1500 round trips from
+    GitHub Actions to D1 and a job that timed out before finishing.
+
+    Cluster ids are assigned here rather than read back from the database.
+    Reading them back would mean either one round trip per insert or trusting
+    the order RETURNING hands rows back in, which SQLite does not promise. The
+    ingestion holds a concurrency lock, so nothing else is allocating ids.
+    """
+    if not plan.articles:
+        return
+
     fetched_at = now.strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    for article in plan.articles:
-        draft = article.draft
+    rows = client.query("SELECT COALESCE(MAX(id), 0) + 1 AS next_id FROM clusters")
+    next_cluster_id = rows[0]["next_id"] if rows else 1
 
+    cluster_rows = []
+    article_rows = []
+    for offset, article in enumerate(plan.articles):
+        draft = article.draft
         cluster_id = assign_cluster(draft, article.term_frequencies, [])
         if cluster_id is None:
-            client.query(
-                "INSERT INTO clusters (first_seen_at, size) VALUES (?, 1)",
-                [draft.published_at],
-            )
-            cluster_id = client.query("SELECT last_insert_rowid() AS id")[0]["id"]
+            cluster_id = next_cluster_id + offset
+            cluster_rows.append((cluster_id, draft.published_at, 1))
 
-        client.query(
-            "INSERT OR IGNORE INTO articles "
-            "(source_id, cluster_id, title, summary, url, published_at, fetched_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            [
+        article_rows.append(
+            (
                 draft.source_id,
                 cluster_id,
                 draft.title,
@@ -131,25 +203,26 @@ def store(client: D1Client, plan: IngestionPlan, now: datetime) -> None:
                 draft.url,
                 draft.published_at,
                 fetched_at,
-            ],
-        )
-        rows = client.query("SELECT id FROM articles WHERE url = ?", [draft.url])
-        if not rows:
-            continue
-        article_id = rows[0]["id"]
-
-        client.insert_many(
-            "article_terms",
-            ("article_id", "term", "tf"),
-            [(article_id, term, tf) for term, tf in article.term_frequencies.items()],
+            )
         )
 
-    for term, count in plan.document_counts.items():
-        client.query(
-            "INSERT INTO terms (term, doc_count) VALUES (?, ?) "
-            "ON CONFLICT(term) DO UPDATE SET doc_count = doc_count + ?",
-            [term, count, count],
-        )
+    client.insert_many("clusters", ("id", "first_seen_at", "size"), cluster_rows)
+    client.insert_many(
+        "articles",
+        ("source_id", "cluster_id", "title", "summary", "url", "published_at", "fetched_at"),
+        article_rows,
+    )
+
+    ids = _article_ids(client, [a.draft.url for a in plan.articles])
+    term_rows = [
+        (ids[a.draft.url], term, tf)
+        for a in plan.articles
+        if a.draft.url in ids
+        for term, tf in a.term_frequencies.items()
+    ]
+    client.insert_many("article_terms", ("article_id", "term", "tf"), term_rows)
+
+    _bump_document_counts(client, plan.document_counts)
 
     client.query(
         "UPDATE corpus_stats SET total_docs = total_docs + ? WHERE id = 1",
@@ -162,7 +235,8 @@ def run(client: D1Client | None = None, now: datetime | None = None) -> Ingestio
     client = client or D1Client.from_env()
     now = now or datetime.now(UTC)
 
-    drafts = fetch_drafts(now=now)
+    source_ids = ensure_sources(client)
+    drafts = fetch_drafts(SOURCES, source_ids, now=now)
     plan = prepare(drafts, known_urls(client, [d.url for d in drafts]))
     store(client, plan, now)
     return plan

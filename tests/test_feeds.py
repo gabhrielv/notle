@@ -7,7 +7,13 @@ scrapes article bodies.
 
 from datetime import UTC, datetime
 
-from ingest.feeds import ArticleDraft, clean_summary, dedupe_by_url, parse_feed
+from ingest.feeds import (
+    SUMMARY_MAX_CHARS,
+    ArticleDraft,
+    clean_summary,
+    dedupe_by_url,
+    parse_feed,
+)
 
 FEED = b"""<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0">
@@ -48,6 +54,32 @@ class TestCleanSummary:
     def test_empty_input_yields_empty_string(self):
         assert clean_summary("") == ""
         assert clean_summary(None) == ""
+
+    def test_long_summaries_are_capped(self):
+        """G1 and Agencia Brasil ship the whole article body in <description>.
+
+        Measured against the live feeds: G1 averages 5690 characters and 243
+        lemmas per item, Poder360 averages 125 characters and 15 lemmas. Term
+        frequencies are normalized to sum to one, so uncapped, every G1 term
+        would weigh 0.4% against a Poder360 term's 6.7%, and every G1 story
+        would rank low for a reason that has nothing to do with the reader.
+
+        It is the same class of invisible source bias the architecture rejects
+        for dwell time, arriving from the opposite direction.
+        """
+        capped = clean_summary("palavra " * 400)
+
+        assert len(capped) <= SUMMARY_MAX_CHARS
+
+    def test_capping_does_not_cut_a_word_in_half(self):
+        """The lemma of half a word is not a word, and the card shows it."""
+        capped = clean_summary("antidisestablishmentarianism " * 40)
+
+        assert not capped.endswith("antidis")
+        assert capped.split()[-1] == "antidisestablishmentarianism"
+
+    def test_a_short_summary_is_untouched(self):
+        assert clean_summary("O Copom manteve a taxa") == "O Copom manteve a taxa"
 
 
 class TestParseFeed:

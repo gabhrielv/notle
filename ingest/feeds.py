@@ -15,6 +15,21 @@ import feedparser
 _TAG = re.compile(r"<[^>]+>")
 _WHITESPACE = re.compile(r"\s+")
 
+# Some portals put the entire article body in <description>. Measured against
+# the live feeds: G1 averages 5690 characters per item and Agencia Brasil 2875,
+# while Folha, BBC, CNN and Poder360 sit between 125 and 343.
+#
+# That gap is not cosmetic. Term frequencies are normalized to sum to one, so an
+# uncapped G1 item spreads its weight across 243 terms at 0.4% each while a
+# Poder360 item puts 6.7% on each of 15. Every G1 story would then rank low for
+# a reason that has nothing to do with what the reader likes. It is the same
+# invisible source bias the architecture rejects for dwell time, arriving from
+# the opposite direction.
+#
+# The cap sits just above the longest genuine summary observed (520 characters),
+# so real summaries pass through untouched and only bodies get trimmed.
+SUMMARY_MAX_CHARS = 600
+
 
 @dataclass(frozen=True)
 class ArticleDraft:
@@ -37,7 +52,16 @@ def clean_summary(raw: str | None) -> str:
 
     text = html.unescape(raw)
     text = _TAG.sub(" ", text)
-    return _WHITESPACE.sub(" ", text).strip()
+    text = _WHITESPACE.sub(" ", text).strip()
+
+    if len(text) <= SUMMARY_MAX_CHARS:
+        return text
+
+    # Cut on a word boundary. Half a word lemmatizes to something that is not a
+    # word, and the card shows that text to the reader as an explanation.
+    cut = text[:SUMMARY_MAX_CHARS]
+    boundary = cut.rfind(" ")
+    return cut[:boundary].strip() if boundary > 0 else cut.strip()
 
 
 def _published_at(entry, now: datetime) -> str:

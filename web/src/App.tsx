@@ -5,6 +5,7 @@ import { answerOnboarding, readFeed, readLatest, readSearch, record } from './ap
 import type { Feed, Signal } from './api'
 import { useTheme } from './theme'
 import { useList, useSentinel } from './useList'
+import { useSignals } from './useSignals'
 import type { Loader } from './useList'
 
 /**
@@ -119,6 +120,10 @@ type StreamProps = {
 function Stream({ load, listKey, canAct, emptyTitle, emptyBody, children }: StreamProps) {
   const list = useList(load, listKey)
   const { act, busy, leaving, problem } = useActions(list.drop)
+  // The same switch that hides the buttons stops the measuring. An anonymous
+  // search promises nothing is recorded, and that promise is kept by there
+  // being nothing to record rather than by a flag the server has to honour.
+  const { seen, clicked } = useSignals(canAct)
   const [slow, setSlow] = useState(false)
 
   const firstLoad = list.busy && list.items.length === 0
@@ -153,6 +158,8 @@ function Stream({ load, listKey, canAct, emptyTitle, emptyBody, children }: Stre
               busy={busy === card.cluster_id}
               canAct={canAct}
               onAct={act}
+              onSeen={seen}
+              onOpen={clicked}
             />
           ))}
         </ul>

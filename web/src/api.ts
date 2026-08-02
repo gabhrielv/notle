@@ -61,6 +61,44 @@ export type Search = Page & { query: string }
 
 export type Signal = 'like' | 'hide'
 
+/**
+ * One measured event. No weight: the client says what happened and for how
+ * long, and the server decides what it is worth. A browser reporting its own
+ * weights would be a browser writing into someone's taste profile.
+ */
+export type SignalEvent = {
+  type: 'impression' | 'dwell' | 'click' | 'return'
+  cluster_id: number
+  duration_ms?: number
+  text_length?: number
+}
+
+export function sendSignals(
+  sessionId: string,
+  events: SignalEvent[],
+  beacon = false,
+): void {
+  const body = JSON.stringify({ session_id: sessionId, events })
+
+  // sendBeacon survives the page going away, which fetch does not reliably do.
+  // It is only used on the way out, because it gives back no response and no
+  // errors, so the ordinary path keeps something that can fail visibly.
+  if (beacon && navigator.sendBeacon) {
+    navigator.sendBeacon('/api/signals', new Blob([body], { type: 'application/json' }))
+    return
+  }
+
+  void fetch('/api/signals', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body,
+    keepalive: true,
+  }).catch(() => {
+    // Losing a batch of implicit signal is not worth telling the reader about.
+    // It adjusts; it does not decide.
+  })
+}
+
 async function read<T>(path: string, signal?: AbortSignal): Promise<T> {
   const response = await fetch(path, { signal })
   if (!response.ok) {

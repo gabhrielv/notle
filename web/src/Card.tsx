@@ -1,3 +1,4 @@
+import { useCallback, useEffect, useRef } from 'react'
 import type { Card as CardData, Signal } from './api'
 import { sayAge } from './api'
 
@@ -39,6 +40,60 @@ function Mark({ plates }: { plates: number }) {
   )
 }
 
+/**
+ * Accumulates how long the card was actually on screen, and reports once.
+ *
+ * Once per mount, not once per pass across the viewport: a reader scrolling up
+ * and back down would otherwise spend a story's three impressions without ever
+ * having been offered it three times.
+ *
+ * A skeleton card never reaches here, which is deliberate. Counting a
+ * placeholder as an impression would record a view of a story nobody saw and
+ * poison the repetition limit with a ghost.
+ */
+function useOnScreen(report: (visibleMs: number) => void) {
+  const ref = useRef<HTMLLIElement | null>(null)
+  const since = useRef<number | null>(null)
+  const total = useRef(0)
+  const done = useRef(false)
+
+  useEffect(() => {
+    const node = ref.current
+    if (!node) return
+
+    const settle = () => {
+      if (since.current !== null) {
+        total.current += Date.now() - since.current
+        since.current = null
+      }
+      if (!done.current) {
+        done.current = true
+        report(total.current)
+      }
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const showing = entries[0]?.isIntersecting
+        if (showing) {
+          since.current ??= Date.now()
+        } else if (since.current !== null) {
+          settle()
+        }
+      },
+      { threshold: 0.5 },
+    )
+
+    observer.observe(node)
+    return () => {
+      observer.disconnect()
+      settle()
+    }
+  }, [report])
+
+  return ref
+}
+
 type Props = {
   card: CardData
   index: number
@@ -52,9 +107,27 @@ type Props = {
    */
   canAct: boolean
   onAct: (cluster: number, type: Signal) => void
+  onSeen: (cluster: number, visibleMs: number, textLength: number) => void
+  onOpen: (cluster: number) => void
 }
 
-export function Card({ card, index, isLead, leaving, busy, canAct, onAct }: Props) {
+export function Card({
+  card,
+  index,
+  isLead,
+  leaving,
+  busy,
+  canAct,
+  onAct,
+  onSeen,
+  onOpen,
+}: Props) {
+  const report = useCallback(
+    (visibleMs: number) => onSeen(card.cluster_id, visibleMs, card.title.length),
+    [onSeen, card.cluster_id, card.title.length],
+  )
+  const ref = useOnScreen(report)
+
   const others = card.also_in
   // Beyond the anchor's own article, the rest of a single portal cluster is the
   // same template repeated per city. Counting them is honest; listing the
@@ -63,6 +136,7 @@ export function Card({ card, index, isLead, leaving, busy, canAct, onAct }: Prop
 
   return (
     <li
+      ref={ref}
       className={`card${isLead ? ' is-lead' : ''}${leaving ? ' is-leaving' : ''}`}
       // The stagger stops counting after a handful of cards. Left uncapped, a
       // full page would hold the last one back by more than a second, and a
@@ -83,7 +157,12 @@ export function Card({ card, index, isLead, leaving, busy, canAct, onAct }: Prop
       )}
 
       <h2 className="headline">
-        <a href={card.url} target="_blank" rel="noopener noreferrer">
+        <a
+          href={card.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={() => onOpen(card.cluster_id)}
+        >
           {card.title}
         </a>
       </h2>

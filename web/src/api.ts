@@ -33,6 +33,15 @@ export type Feed = {
   user: { is_new: boolean; discovery_ratio: number }
   profile: { terms: number; empty: boolean; hidden_terms: number }
   feed: Card[]
+  /**
+   * Stories the reader's own hide pushed off the page.
+   *
+   * They are not part of the feed and must not be shown as if they were. The
+   * penalty is larger than the spread of scores inside a page, so anything it
+   * touches lands outside it, and without this list the reader would see one
+   * cluster vanish and never learn the same gesture moved others.
+   */
+  held_back: Card[]
 }
 
 export type Signal = 'like' | 'hide'

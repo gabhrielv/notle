@@ -43,7 +43,7 @@ async def read_feed(request, env):
 
     stored, avoided = await profile.load(env, user["id"])
     answered = await profile.acted_on(env, user["id"])
-    cards = await feed.build(env, stored, avoided, answered, datetime.now(UTC))
+    cards, held_back = await feed.build(env, stored, avoided, answered, datetime.now(UTC))
 
     headers = {
         # Personalized, so it must never be held by a cache between the reader
@@ -62,6 +62,10 @@ async def read_feed(request, env):
                 "hidden_terms": len(avoided),
             },
             "feed": cards,
+            # What the reader's own hide moved. Kept out of `feed` because these
+            # are not stories the ranking chose to show; they are an account of
+            # what it chose not to.
+            "held_back": held_back,
         },
         headers=headers,
     )

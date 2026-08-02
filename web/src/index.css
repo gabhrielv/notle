@@ -397,6 +397,70 @@ body::before {
   margin-top: 0.8rem;
 }
 
+/* ---------- what the reader's hide moved ---------- */
+
+/* Set apart from the feed rather than appended to it. These are not stories the
+   ranking chose to show, so they must not read as more of the same list: the
+   rule above them is the same weight as the masthead's, and the type is quieter
+   than any card. */
+.held {
+  margin-top: 3rem;
+  padding-top: 1.25rem;
+  border-top: 2px solid var(--ink);
+}
+
+.held-title {
+  margin: 0 0 0.4rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--reg);
+}
+
+.held-body {
+  margin: 0 0 1.25rem;
+  max-width: 34rem;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+
+.held-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.9rem;
+}
+
+.held-link {
+  font-family: var(--display);
+  font-size: 1rem;
+  font-weight: 500;
+  line-height: 1.25;
+  color: var(--ink-2);
+  text-decoration: none;
+}
+
+.held-link:hover {
+  color: var(--ink);
+}
+
+.held-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem 0.75rem;
+  margin: 0.2rem 0 0;
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  color: var(--ink-2);
+}
+
+.held-terms {
+  color: var(--ink);
+}
+
 .notice {
   margin-top: 3rem;
   padding-top: 2rem;

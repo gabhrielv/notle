@@ -15,12 +15,10 @@ const LEAVE_MS = 240
 /** The masthead line, naming both halves of the profile once each exists. */
 function describeProfile(profile: Feed['profile']): string {
   const kept = profile.empty ? '' : `${profile.terms} termos de gosto`
-  const hidden = profile.hidden_terms ? `${profile.hidden_terms} escondidos` : ''
+  const hidden = profile.hidden_terms ? `${profile.hidden_terms} termos escondidos` : ''
 
-  if (kept && hidden) return `${kept}, ${hidden}`
-  if (kept) return kept
-  if (hidden) return hidden
-  return 'feed ainda sem gosto registrado'
+  if (kept && hidden) return `${kept}, ${profile.hidden_terms} escondidos`
+  return kept || hidden || 'feed ainda sem gosto registrado'
 }
 
 function Skeleton() {
@@ -95,6 +93,9 @@ export default function App() {
   }
 
   const cards = data?.feed ?? []
+  // Anything the reader answers for leaves the whole response on the next load,
+  // so this list only needs to survive until then.
+  const held = data?.held_back ?? []
 
   return (
     <main className="shell">
@@ -132,6 +133,36 @@ export default function App() {
             />
           ))}
         </ul>
+      )}
+
+      {held.length > 0 && (
+        <section className="held">
+          <h2 className="held-title">O que você afastou</h2>
+          <p className="held-body">
+            {held.length === 1
+              ? 'Uma matéria desta janela desceu'
+              : `${held.length} matérias desta janela desceram`}{' '}
+            porque se parecem com o que você escondeu. Elas ficaram fora do feed acima.
+          </p>
+          <ul className="held-list">
+            {held.map((card) => (
+              <li key={card.cluster_id} className="held-item">
+                <a
+                  className="held-link"
+                  href={card.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  {card.title}
+                </a>
+                <p className="held-meta">
+                  <span className="held-terms">↓ {card.against.join(' · ')}</span>
+                  <span>{card.source}</span>
+                </p>
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
 
       {failed && (

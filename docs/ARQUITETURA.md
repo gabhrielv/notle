@@ -179,6 +179,40 @@ Daí a regra geral:
 
 Sistemas grandes toleram ruído implícito porque o erro se cancela na média de milhões de eventos. Este não vai ter volume, então peso baixo em sinal implícito não é timidez, é a única postura defensável nesta escala.
 
+### A regra como desigualdade
+
+"Implícito ajusta, explícito decide" vira aritmética verificável em `api/signals.py`, e um teste a segura:
+
+```
+dwell normalizado  <= 0.15
+click                 0.40
+retorno > 60s      <= 0.30   (satura em 3 min)
+                   ------
+maximo implicito      0.85   <  1.00, o menor peso explicito
+```
+
+O valor **nunca vem do cliente**. O navegador diz o que aconteceu e por quanto tempo, e o servidor decide quanto vale. Um cliente que reportasse o próprio peso seria um cliente escrevendo direto no perfil de gosto de alguém.
+
+Duas coisas que a implementação corrigiu no desenho:
+
+**A saturação do retorno não pode terminar no corte.** A rampa ia de 60s a 300s, e 300s é exatamente onde o evento é descartado por não significar nada. O retorno mais valioso possível seria então um segundo antes de virar lixo, que é um precipício disfarçado de curva. A rampa agora fecha em 3 minutos e fica plana até o corte.
+
+**Duração ausente não é duração zero.** Lido como zero, um `duration_ms` faltando vira "voltou instantaneamente", que é a rejeição mais forte que o funil sabe expressar. Um defeito no cliente puniria silenciosamente toda matéria que tocasse.
+
+### A penalidade de impressão, medida contra o feed real
+
+O doc pedia penalidade crescente com sumiço na terceira exibição, e a primeira forma tentada foi `1 - exibições/3`, ou seja um terço a menos já na primeira. Contra o feed ao vivo isso não é um terço de nada: os scores da janela são densíssimos, porque quase tudo é recente e o piso domina.
+
+| posição | 1 | 25 | 49 | 97 | 193 | 385 |
+|---|---|---|---|---|---|---|
+| score | 0.0386 | 0.0358 | 0.0342 | 0.0316 | 0.0275 | 0.0207 |
+
+Um terço a menos é a distância do topo até depois da posição 250. Medindo, uma matéria exibida **uma vez** sumia das 192 primeiras posições, o que significa que a penalidade crescente e a terceira exibição nunca aconteciam: a primeira decidia tudo.
+
+A escala passou a ser lida da tabela em vez de derivada de fórmula: `1.0`, `0.93`, `0.85`, e zero na terceira. Contra o feed ao vivo isso move o card da posição 1 para a 22, depois para a 75, e então para fora. É o que faz "notícia boa não desaparece por ter passado na tela" ser verdade sem abrir mão do limite.
+
+**Desvio registrado:** o doc manda normalizar o dwell pelo tamanho do resumo, e o card não mostra resumo, só termos, manchete e assinatura. O divisor virou a manchete, que é o texto em que o leitor está de fato gastando os segundos. Normalizar por texto que não está na tela corrigiria um viés inexistente e deixaria o real de pé.
+
 ## Os quatro vetores de perfil
 
 | Vetor | Constante de tempo | Origem | Onde mora |

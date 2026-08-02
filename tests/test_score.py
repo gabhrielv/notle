@@ -11,12 +11,14 @@ from datetime import UTC, datetime
 from ranking.score import (
     BETA,
     HALF_LIFE_HOURS,
+    IMPRESSION_LIMIT,
     NEGATIVE_FLOOR,
     W_GOSTO,
     W_RECENCIA,
     age_in_hours,
     decay,
     rejection,
+    repetition,
     score,
     similarity,
 )
@@ -109,6 +111,54 @@ class TestScore:
         from this morning, or the feed stops being news.
         """
         assert score(1.0, age_hours=72) < score(0.0, age_hours=1)
+
+
+class TestRepetition:
+    """How long the feed keeps offering a story the reader has not answered."""
+
+    def test_a_story_never_shown_keeps_all_of_its_score(self):
+        assert repetition(0) == 1.0
+
+    def test_one_pass_across_the_screen_does_not_kill_it(self):
+        """The sentence that reconciles the two halves of the rule. A good story
+        does not vanish for having been on screen; it takes three.
+        """
+        assert 0 < repetition(1) < 1.0
+        assert repetition(1) > repetition(2) > 0
+
+    def test_one_showing_moves_a_story_by_a_page_and_not_by_the_corpus(self):
+        """Measured off the live feed, where scores are packed very tightly:
+        position 1 scores 0.0386, position 25 scores 0.0358, position 193
+        scores 0.0275. So what matters is not how large the penalty looks but
+        how far it moves a card.
+
+        The first shape tried here took a third off at the first impression,
+        which pushed a story from the top of the feed to beyond position 192.
+        The growing penalty and the third showing then never happened, because
+        the first one decided everything.
+        """
+        top, page_two, deep = 0.0386, 0.0358, 0.0275
+
+        assert top * repetition(1) > page_two * 0.97
+        assert top * repetition(2) > deep
+
+    def test_the_third_showing_is_the_last(self):
+        assert repetition(IMPRESSION_LIMIT) == 0.0
+        assert repetition(IMPRESSION_LIMIT + 5) == 0.0
+
+    def test_it_damps_rather_than_subtracts(self):
+        """Subtracting enough to matter drives the score under zero, and under
+        zero the decay inverts: multiplying a negative by a smaller number makes
+        it larger, so the staler of two over shown stories would climb above the
+        fresher one. Damping keeps every score on one side of zero.
+        """
+        fresh = score(0.05, age_hours=0) * repetition(2)
+        stale = score(0.05, age_hours=36) * repetition(2)
+
+        assert fresh > stale > 0
+
+    def test_being_shown_never_makes_a_story_rank_higher(self):
+        assert repetition(1) < repetition(0)
 
 
 class TestRejection:

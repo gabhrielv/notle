@@ -41,7 +41,17 @@ NEGATIVE_WEIGHTS = {"hide": 1.0}
 
 WEIGHTS = {**POSITIVE_WEIGHTS, **NEGATIVE_WEIGHTS}
 
-POSITIVE = tuple(POSITIVE_WEIGHTS)
+# The implicit half of the funnel. Weighed per event rather than per type, so
+# their weights live in `api.signals` and reach the database in the `value`
+# column instead of in a table here.
+#
+# `impression` is deliberately in neither tuple. It is stored, because the
+# ranking counts it to stop offering a story a fourth time, and it is never read
+# into a profile, because it measures what the ranking chose to show rather than
+# what the reader thought of it.
+IMPLICIT_POSITIVE = ("dwell", "click", "return")
+
+POSITIVE = (*POSITIVE_WEIGHTS, *IMPLICIT_POSITIVE)
 NEGATIVE = tuple(NEGATIVE_WEIGHTS)
 
 # Signals the reader chose to send. Implicit ones (impression, dwell, the time
@@ -72,7 +82,7 @@ def combine(vectors: list[tuple[dict[str, float], float]]) -> dict[str, float]:
 
 
 async def signal_vectors(
-    env, user_id: str, kinds: tuple[str, ...], weights: dict[str, float]
+    env, user_id: str, kinds: tuple[str, ...]
 ) -> list[tuple[dict[str, float], float]]:
     """The anchor terms of every cluster this reader answered one way, weighted.
 
@@ -85,29 +95,41 @@ async def signal_vectors(
     the architecture means by interactions being events rather than flags: a
     like and a hide are the same row shape, and which vector they land in is a
     question asked at read time.
+
+    The weight comes from `interactions.value` rather than from a table keyed on
+    type, because the implicit half of the funnel does not have one weight per
+    type: what a dwell is worth depends on how long it lasted against how much
+    text there was. Summing the column also means several signals on one cluster
+    accumulate, which is the point of a funnel whose stages filter each other.
+
+    A cluster whose signals cancel to zero or below is dropped. That happens when
+    a click was followed by an immediate return, and the honest reading of that
+    pair is that the reader looked and left, not that they were interested a
+    little.
     """
     placeholders = ", ".join("?" * len(kinds))
     rows = await query(
         env,
-        "SELECT i.cluster_id, i.type, t.term, t.tf "
+        "SELECT i.cluster_id, SUM(i.value) AS weight, t.term, t.tf "
         "FROM interactions i "
         "JOIN clusters c ON c.id = i.cluster_id "
         "JOIN article_terms t ON t.article_id = c.representative_article_id "
-        f"WHERE i.user_id = ? AND i.type IN ({placeholders})",
+        f"WHERE i.user_id = ? AND i.type IN ({placeholders}) "
+        "GROUP BY i.cluster_id, t.term",
         [user_id, *kinds],
     )
 
     grouped: dict[int, tuple[dict[str, float], float]] = {}
     for row in rows:
-        vector, _ = grouped.setdefault(row["cluster_id"], ({}, weights[row["type"]]))
+        vector, _ = grouped.setdefault(row["cluster_id"], ({}, row["weight"] or 0.0))
         vector[row["term"]] = row["tf"]
 
-    return list(grouped.values())
+    return [pair for pair in grouped.values() if pair[1] > 0]
 
 
 async def positive_vectors(env, user_id: str) -> list[tuple[dict[str, float], float]]:
-    """Clusters the reader kept."""
-    return await signal_vectors(env, user_id, POSITIVE, POSITIVE_WEIGHTS)
+    """Clusters the reader kept, or read, or clicked through to."""
+    return await signal_vectors(env, user_id, POSITIVE)
 
 
 async def negative_vectors(env, user_id: str) -> list[tuple[dict[str, float], float]]:
@@ -118,7 +140,7 @@ async def negative_vectors(env, user_id: str) -> list[tuple[dict[str, float], fl
     Read as a vector it reaches everything that resembles it, which is what
     lets a card say why it ranked lower instead of a subject simply vanishing.
     """
-    return await signal_vectors(env, user_id, NEGATIVE, NEGATIVE_WEIGHTS)
+    return await signal_vectors(env, user_id, NEGATIVE)
 
 
 async def hidden(env, user_id: str) -> set[int]:
@@ -138,6 +160,24 @@ async def hidden(env, user_id: str) -> set[int]:
         [user_id, *NEGATIVE],
     )
     return {row["cluster_id"] for row in rows if row["cluster_id"] is not None}
+
+
+async def impressions(env, user_id: str) -> dict[int, int]:
+    """How many times each cluster has already been offered to this reader.
+
+    The one thing an impression is read for. It never reaches a vector, because
+    a story appearing is a consequence of the ranking's own choice rather than
+    anything the reader thought, and a system that learns from it is measuring
+    its own output.
+    """
+    rows = await query(
+        env,
+        "SELECT cluster_id, COUNT(*) AS shown FROM interactions "
+        "WHERE user_id = ? AND type = 'impression' AND cluster_id IS NOT NULL "
+        "GROUP BY cluster_id",
+        [user_id],
+    )
+    return {row["cluster_id"]: row["shown"] for row in rows}
 
 
 async def acted_on(env, user_id: str) -> set[int]:

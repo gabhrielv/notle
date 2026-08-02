@@ -243,9 +243,9 @@ class TestPositiveVectors:
             FakeEnv(
                 {
                     "FROM interactions i": [
-                        {"cluster_id": 1, "type": "like", "term": "selic", "tf": 0.6},
-                        {"cluster_id": 1, "type": "like", "term": "copom", "tf": 0.4},
-                        {"cluster_id": 2, "type": "share", "term": "futebol", "tf": 1.0},
+                        {"cluster_id": 1, "weight": 1.0, "term": "selic", "tf": 0.6},
+                        {"cluster_id": 1, "weight": 1.0, "term": "copom", "tf": 0.4},
+                        {"cluster_id": 2, "weight": 1.5, "term": "futebol", "tf": 1.0},
                     ]
                 }
             ),
@@ -290,8 +290,8 @@ class TestNegativeVectors:
             FakeEnv(
                 {
                     "FROM interactions i": [
-                        {"cluster_id": 7, "type": "hide", "term": "futebol", "tf": 0.7},
-                        {"cluster_id": 7, "type": "hide", "term": "escalação", "tf": 0.3},
+                        {"cluster_id": 7, "weight": 1.0, "term": "futebol", "tf": 0.7},
+                        {"cluster_id": 7, "weight": 1.0, "term": "escalação", "tf": 0.3},
                     ]
                 }
             ),

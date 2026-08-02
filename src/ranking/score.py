@@ -140,6 +140,54 @@ def similarity(dot: float, profile_norm: float, cluster_norm: float) -> float:
     return dot / magnitude if magnitude else 0.0
 
 
+# What is left of a story's score after it has been offered this many times.
+#
+# A schedule rather than a formula, because the numbers were read off the live
+# ranking rather than derived. Scores in the window are packed extremely tightly,
+# since almost everything is recent and the floor dominates:
+#
+#     position     1     25     49     97    193    385
+#     score    0.0386 0.0358 0.0342 0.0316 0.0275 0.0207
+#
+# So the size of a penalty is not the interesting quantity; how far it moves a
+# card is. The first shape tried here was `1 - shown / 3`, which takes a third
+# off at the first impression, and a third is the distance from the top of the
+# feed to somewhere past position 250. Measured against the live feed, a story
+# shown once vanished beyond the first 192 positions, which means the growing
+# penalty and the third showing never happened: everything was decided by the
+# first.
+#
+# These three move a card by roughly a page, then by a few pages, then out. That
+# is what makes "a good story does not vanish for having been on screen" true
+# while still ending at three.
+REPETITION = (1.0, 0.93, 0.85)
+
+# How many times the feed may show one story before it stops offering it.
+IMPRESSION_LIMIT = len(REPETITION)
+
+
+def repetition(shown: int) -> float:
+    """What is left of a story's score after it has been offered `shown` times.
+
+    Multiplicative rather than subtracted, and that is not a stylistic choice.
+    A subtracted penalty large enough to matter drives the score below zero, and
+    under zero the decay inverts: multiplying a negative by a smaller number
+    makes it larger, so the staler of two over-shown stories would climb above
+    the fresher one. Damping keeps every score on the same side of zero and the
+    ordering intact.
+
+    Nothing about this touches the profile. An impression is a consequence of
+    the ranking's own choice, so learning from it would be the system measuring
+    its own output and calling it taste.
+    """
+    if shown <= 0:
+        return REPETITION[0]
+    if shown >= IMPRESSION_LIMIT:
+        return 0.0
+
+    return REPETITION[shown]
+
+
 def rejection(negative_cosine: float) -> float:
     """How much of a negative cosine counts, which below the floor is none.
 

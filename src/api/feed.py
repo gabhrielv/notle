@@ -20,7 +20,7 @@ import json
 
 from api import profile
 from api.db import query
-from ranking.score import age_in_hours, rejection, score, similarity
+from ranking.score import age_in_hours, rejection, repetition, score, similarity
 from ranking.vectors import norm, strongest
 
 # How many profile terms reach the query. Twenty covers the shape of a taste
@@ -103,7 +103,15 @@ async def candidates(env) -> list[dict]:
 
 
 def rank(
-    rows, matched, profile_norm, answered, now, avoided=None, avoided_norm=0.0, offset=0
+    rows,
+    matched,
+    profile_norm,
+    answered,
+    now,
+    avoided=None,
+    avoided_norm=0.0,
+    offset=0,
+    shown=None,
 ) -> list[dict]:
     """One page of what `scored` produced.
 
@@ -112,12 +120,21 @@ def rank(
     ingestion runs, once an hour. Between two runs the order is fixed, so page
     two is the same list page one came from, further down.
     """
-    everything = scored(rows, matched, profile_norm, answered, now, avoided, avoided_norm)
+    everything = scored(
+        rows, matched, profile_norm, answered, now, avoided, avoided_norm, shown
+    )
     return everything[offset : offset + PAGE]
 
 
 def scored(
-    rows, matched, profile_norm, answered, now, avoided=None, avoided_norm=0.0
+    rows,
+    matched,
+    profile_norm,
+    answered,
+    now,
+    avoided=None,
+    avoided_norm=0.0,
+    shown=None,
 ) -> list[dict]:
     """Scores every candidate and returns all of them, best first.
 
@@ -134,11 +151,19 @@ def scored(
     afterwards.
     """
     avoided = avoided or {}
+    shown = shown or {}
     ranked = []
 
     for row in rows:
         cluster_id = row["cluster_id"]
         if cluster_id in answered:
+            continue
+
+        # Offered enough times already. Dropped here rather than scored to zero,
+        # so it cannot occupy a slot on a page it can never win.
+        seen = shown.get(cluster_id, 0)
+        damping = repetition(seen)
+        if not damping:
             continue
 
         terms = matched.get(cluster_id, {})
@@ -159,9 +184,10 @@ def scored(
         ranked.append(
             {
                 "cluster_id": cluster_id,
-                "score": score(affinity, age, penalty),
+                "score": score(affinity, age, penalty) * damping,
                 "similarity": affinity,
                 "penalty": penalty,
+                "shown": seen,
                 "age_hours": age,
                 "because": [term for term, _ in sorted(terms.items(), key=_by_weight)][:REASONS],
                 "against": blamed,
@@ -257,7 +283,7 @@ async def decorate(env, ranked: list[dict]) -> list[dict]:
 
 
 async def build(
-    env, profile_vector, negative_vector, answered, now, offset=0
+    env, profile_vector, negative_vector, answered, now, offset=0, shown=None
 ) -> list[dict]:
     """One page of one reader's feed, from stored profiles to finished cards.
 
@@ -286,6 +312,7 @@ async def build(
         against,
         norm(avoided),
         offset,
+        shown,
     )
 
     return await decorate(env, page)

@@ -17,7 +17,7 @@ from urllib.parse import parse_qs, urlparse
 
 from workers import Response
 
-from api import browse, feed, onboarding, profile, users
+from api import browse, feed, onboarding, profile, signals, users
 from api.db import execute, query_one
 
 # What a reader is allowed to record. A hide both excludes its own cluster and
@@ -68,7 +68,10 @@ async def read_feed(request, env):
 
     stored, avoided = await profile.load(env, user["id"])
     answered = await profile.acted_on(env, user["id"])
-    cards = await feed.build(env, stored, avoided, answered, datetime.now(UTC), offset)
+    shown = await profile.impressions(env, user["id"])
+    cards = await feed.build(
+        env, stored, avoided, answered, datetime.now(UTC), offset, shown
+    )
 
     # The cold start rides along rather than being asked for separately. A
     # visitor who has answered nothing is the visitor this screen has to be
@@ -101,6 +104,59 @@ async def read_feed(request, env):
         },
         headers=headers,
     )
+
+
+async def write_signals(request, env):
+    """Stores a batch of implicit signals and rebuilds the profile once.
+
+    Batched because these fire constantly: a card entering the viewport, a card
+    leaving it, a click, a return. One request each would be a request per scroll
+    tick, and the reader would be paying for the measurement in the latency of
+    the thing being measured.
+
+    The rebuild happens once at the end rather than per event, for the same
+    reason: the vector is a pure function of the log, so it only has to be
+    correct after the batch, not during it.
+    """
+    user, is_new = await users.identify(env, request.headers.get("Cookie"))
+
+    try:
+        body = json.loads(await request.text())
+    except ValueError:
+        return Response.json({"error": "corpo invalido"}, status=400)
+
+    rows = signals.accept(body.get("events"))
+    if not rows:
+        return Response.json({"ok": True, "stored": 0}, headers=dict(PRIVATE))
+
+    session = body.get("session_id")
+    session = session if isinstance(session, str) and len(session) <= 64 else None
+    stamp = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    values = ", ".join(["(?, ?, ?, ?, ?, ?, ?)"] * len(rows))
+    params = [
+        value
+        for kind, cluster_id, weight, duration in rows
+        for value in (user["id"], cluster_id, session, kind, weight, duration, stamp)
+    ]
+    await execute(
+        env,
+        "INSERT INTO interactions "
+        "(user_id, cluster_id, session_id, type, value, duration_ms, created_at) "
+        f"VALUES {values}",
+        params,
+    )
+
+    # An impression is stored and never read into a profile, so a batch of
+    # nothing else leaves the vector alone and skips the rebuild entirely.
+    if any(kind != "impression" for kind, _, _, _ in rows):
+        await profile.rebuild(env, user["id"])
+
+    headers = dict(PRIVATE)
+    if is_new:
+        headers["Set-Cookie"] = users.set_cookie(user["id"])
+
+    return Response.json({"ok": True, "stored": len(rows)}, headers=headers)
 
 
 async def write_onboarding(request, env):
@@ -240,6 +296,7 @@ ROUTES = {
     ("GET", "/api/latest"): read_latest,
     ("GET", "/api/search"): read_search,
     ("POST", "/api/onboarding"): write_onboarding,
+    ("POST", "/api/signals"): write_signals,
     ("POST", "/api/interactions"): record,
 }
 

@@ -12,6 +12,17 @@ const SKELETON_AFTER_MS = 200
 /** Long enough for the card to finish leaving before it stops existing. */
 const LEAVE_MS = 240
 
+/** The masthead line, naming both halves of the profile once each exists. */
+function describeProfile(profile: Feed['profile']): string {
+  const kept = profile.empty ? '' : `${profile.terms} termos de gosto`
+  const hidden = profile.hidden_terms ? `${profile.hidden_terms} escondidos` : ''
+
+  if (kept && hidden) return `${kept}, ${hidden}`
+  if (kept) return kept
+  if (hidden) return hidden
+  return 'feed ainda sem gosto registrado'
+}
+
 function Skeleton() {
   return (
     <ul className="feed">
@@ -92,11 +103,7 @@ export default function App() {
           Notle<span>.</span>
         </h1>
         <p className="standfirst">
-          {data
-            ? data.profile.empty
-              ? 'feed ainda sem gosto registrado'
-              : `perfil com ${data.profile.terms} termos`
-            : 'lendo a janela'}
+          {data ? describeProfile(data.profile) : 'lendo a janela'}
         </p>
       </header>
 

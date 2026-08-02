@@ -166,8 +166,10 @@ body::before {
   }
 }
 
+/* Spans every row the card body can produce: kicker, headline, byline, the
+   source plates, the reasons and the actions. */
 .gutter {
-  grid-row: 1 / span 5;
+  grid-row: 1 / span 6;
   padding-top: 0.35rem;
 }
 
@@ -274,6 +276,53 @@ body::before {
 .tally {
   font-family: var(--mono);
   font-size: 0.72rem;
+  color: var(--ink-2);
+}
+
+/* ---------- why this card is here ---------- */
+
+/* One grid for both rows rather than one per row, so the terms line up under
+   each other. The two directions are a comparison, and a comparison whose
+   columns do not meet is just two sentences. */
+.reasons {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.2rem 0.5rem;
+  margin: 0.85rem 0 0;
+  padding-left: 0.75rem;
+  border-left: 1px solid var(--rule);
+}
+
+.reason {
+  display: contents;
+}
+
+.reason-label {
+  font-size: 0.7rem;
+  color: var(--ink-2);
+}
+
+/* The direction is carried by a mark rather than by colour, because the one
+   accent this page has is already spoken for by the source plates, and a second
+   one would make neither mean anything. */
+.reason-label::before {
+  content: '↑';
+  margin-right: 0.3rem;
+  font-family: var(--mono);
+}
+
+.is-against .reason-label::before {
+  content: '↓';
+}
+
+.reason-terms {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  color: var(--ink);
+}
+
+.is-against .reason-terms {
   color: var(--ink-2);
 }
 

@@ -115,6 +115,27 @@ export function Card({ card, index, isLead, leaving, busy, onAct }: Props) {
         )
       )}
 
+      {/* Why this card sits where it does, in both directions and only when
+          there is something to say. The terms come from the same aggregation
+          that produced the score, so this is the arithmetic of the position
+          rather than a description written next to it. */}
+      {(card.because.length > 0 || card.against.length > 0) && (
+        <dl className="reasons">
+          {card.because.length > 0 && (
+            <div className="reason">
+              <dt className="reason-label">porque você acompanha</dt>
+              <dd className="reason-terms">{card.because.join(' · ')}</dd>
+            </div>
+          )}
+          {card.against.length > 0 && (
+            <div className="reason is-against">
+              <dt className="reason-label">porque você escondeu</dt>
+              <dd className="reason-terms">{card.against.join(' · ')}</dd>
+            </div>
+          )}
+        </dl>
+      )}
+
       <div className="actions">
         <button
           type="button"

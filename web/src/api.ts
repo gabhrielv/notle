@@ -10,9 +10,13 @@ export type Card = {
   cluster_id: number
   score: number
   similarity: number
+  /** Cosine against what the reader hid. Zero for anyone who has hidden nothing. */
+  penalty: number
   age_hours: number
   /** Profile terms that pushed this cluster up, strongest first. */
   because: string[]
+  /** Hidden terms that pushed it down, strongest first. */
+  against: string[]
   /** The cluster's own strongest terms, written by the ingestion job. */
   about: string[]
   title: string
@@ -27,7 +31,7 @@ export type Card = {
 
 export type Feed = {
   user: { is_new: boolean; discovery_ratio: number }
-  profile: { terms: number; empty: boolean }
+  profile: { terms: number; empty: boolean; hidden_terms: number }
   feed: Card[]
 }
 

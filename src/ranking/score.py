@@ -23,33 +23,38 @@ from datetime import datetime
 #
 #     W_RECENCIA is the cosine that is worth one half life of staleness.
 #
-# Which makes it measurable instead of a matter of taste. Against the 252
-# candidates in the live window, with profiles built the way a like builds them,
-# as the mean of the vectors of the clusters the reader kept, the cosine between
-# a profile and a candidate came out:
+# Which makes it measurable instead of a matter of taste. Measured over twenty
+# profiles built the way a like builds them, each the vector of one cluster the
+# reader kept, against the 1576 candidates of the live window, which is 11604
+# pairs with any overlap at all:
 #
-#     max 0.155   p99 0.069   p95 0.042   p90 0.028   median 0.001
+#     max 0.381   p99 0.116   p95 0.065   p90 0.044   median 0.011
 #
-# It sits far below the 0.25 to 0.67 that two articles about the same event score
+# It sits below the 0.25 to 0.67 that two articles about the same event score
 # against each other, and for a plain reason: a profile of a few terms is being
 # compared against a headline vector of around twenty six, so the overlap is
 # thin even when the subject is right.
 #
-# 0.025 sits just under that p90 of 0.028, so a candidate in the top tenth of
+# 0.04 sits just under that p90 of 0.044, so a candidate in the top tenth of
 # affinity clears the bar and is worth twelve hours of age, while everything
-# below it is ordered by freshness. Rounding to 0.03 instead would put the bar
-# above the p90 and quietly make that sentence false, which is the kind of two
-# thousandths that a comment claims and nothing checks.
+# below it is ordered by freshness.
 #
-# The first value tried here was 0.10, above the p99 and near the observed
-# maximum. It made the profile decorative: nothing the reader liked could ever
-# outrank a fresh story about nothing they cared about.
+# These numbers replace an earlier set, max 0.155 and p90 0.028, and the earlier
+# set was not a smaller corpus. It was the dot product being built wrong: the
+# candidate's side went into it unweighted while the norm it divided by was
+# weighed, which pulled every cosine down by somewhere between three and seven
+# times depending on which terms matched. W_RECENCIA was 0.025 then, chosen
+# under the same rule against the wrong distribution.
+#
+# The first value tried was 0.10, above the p99 of that distribution and near
+# its maximum. It made the profile decorative: nothing the reader liked could
+# ever outrank a fresh story about nothing they cared about.
 #
 # Still provisional, and still one of the constants the persona simulator is
 # meant to settle. What changed is that it is now a measurement with a stated
 # meaning rather than a number someone liked the look of.
 W_GOSTO = 1.0
-W_RECENCIA = 0.025
+W_RECENCIA = 0.04
 
 # Below this, two stories share vocabulary rather than a subject.
 #
@@ -74,32 +79,34 @@ W_RECENCIA = 0.025
 #
 # Real coverage of one event scores 0.25 to 0.67 against itself, well clear of
 # this, so nothing a reader would recognise as the hidden subject is let through.
+#
+# This number survived the dot product being fixed, because the table above was
+# measured as a true cosine in the first place rather than through the code. It
+# was the ranking that disagreed with it, not the measurement.
 NEGATIVE_FLOOR = 0.10
 
 # What a hidden subject costs a story that genuinely resembles it.
 #
 # Read the same way W_RECENCIA is, as a sentence that can be checked:
 #
-#     BETA sets what the strongest possible resemblance costs, and at 0.2 that
-#     is about one half life of freshness.
+#     BETA sets what the strongest resemblance costs, and at 0.1 that is about
+#     one half life of freshness.
+#
+# The strongest cosine measured across the window was 0.381, so the worst case
+# costs 0.038 against a W_RECENCIA of 0.04. Above the floor the penalty runs
+# from 0.010 to 0.038: a real demotion, and never more than the whole recency
+# floor is worth.
 #
 # The first value tried here was 1.0, on the argument that it is symmetric with
 # W_GOSTO and that `like` and `hide` weigh the same in the log. The argument was
 # right about the two cosines and wrong about the score they are subtracted
-# from. An untouched story of this moment scores W_RECENCIA, which is 0.025, so
-# a penalty of 0.005 for sharing the word `experiencia` already put a card below
-# everything fresh. One hide removed 294 stories, and the explanation the card
-# was supposed to carry never reached a screen, because a penalised card can
-# never outrank an unpenalised one.
-#
-# At 0.2 the worst case costs 0.031 against a floor of 0.025. The story drops,
-# and stays where it can be seen dropping, which is what "menos relevante"
-# claims and what banishment does not.
+# from. One hide reached 294 of 1576 candidates and drove every one of them
+# below zero.
 #
 # The penalty sits outside the decay, and that is deliberate. Inside it, a
 # rejected story would be forgiven for getting old, and the feed would drift
 # back toward exactly the subject the reader asked it to drop.
-BETA = 0.2
+BETA = 0.1
 
 # News dies in 48 hours. At a 12 hour half life a story from two days ago carries
 # 6% of the weight of one from now, which is small enough to keep the feed from

@@ -229,25 +229,31 @@ Só a razão entre as duas constantes importa, e ela tem uma leitura única. Com
 
 > **`W_RECENCIA` é o cosseno que vale uma meia-vida de idade.**
 
-O que torna a constante mensurável em vez de questão de gosto. Medindo contra os 252 candidatos da janela ao vivo, com perfis montados como um like monta, a média dos vetores dos clusters que o leitor guardou:
+O que torna a constante mensurável em vez de questão de gosto. Medindo 20 perfis montados como um like monta, a média dos vetores dos clusters que o leitor guardou, contra os 1576 candidatos da janela ao vivo, o que dá 11604 pares com alguma sobreposição:
 
 | | cosseno perfil/candidato |
 |---|---|
-| máximo | 0.155 |
-| p99 | 0.069 |
-| p95 | 0.042 |
-| **p90** | **0.028** |
-| mediana | 0.001 |
+| máximo | 0.381 |
+| p99 | 0.116 |
+| p95 | 0.065 |
+| **p90** | **0.044** |
+| mediana | 0.011 |
 
-Fica muito abaixo dos 0.25 a 0.67 que duas matérias sobre o mesmo fato marcam entre si, e por um motivo simples: um perfil de poucos termos está sendo comparado com um vetor de manchete de uns 26, então a sobreposição é fina mesmo quando o assunto é o certo.
+Fica abaixo dos 0.25 a 0.67 que duas matérias sobre o mesmo fato marcam entre si, e por um motivo simples: um perfil de poucos termos está sendo comparado com um vetor de manchete de uns 26, então a sobreposição é fina mesmo quando o assunto é o certo.
 
-`W_RECENCIA = 0.025` põe a barra logo abaixo do p90, então um candidato no décimo superior de afinidade vale doze horas de idade e o resto é ordenado por frescor. **O primeiro valor tentado foi 0.10**, escolhido por analogia com os cossenos entre artigos, e ele estava acima do p99: nada que o leitor curtiu conseguia superar uma matéria nova sobre coisa nenhuma. O perfil virava decoração e o feed, um relógio. A constante continua provisória e continua sendo trabalho da fatia 8, mas agora é medida com significado declarado em vez de número escolhido no olho.
+> **Correção.** A tabela acima registrava máximo 0.155, p99 0.069, p95 0.042, p90 0.028 e mediana 0.001, e esses números estavam errados. Não por causa de um corpus menor: **o produto escalar estava sendo montado errado**. `contributions()` multiplicava o `tf` cru do candidato pelo termo já ponderado do perfil, e dividia por `feed_candidates.norm`, que é o comprimento do vetor *com* IDF. Faltava um IDF do lado do candidato.
+>
+> O erro não era um fator de escala que cancela. Medido contra a janela ao vivo ele ia de **3.1× a 7.2×** conforme os termos que casavam, o que comprimia todos os candidatos numa faixa de 0.017 a 0.021 e deixava "IFMG abre vagas para cursos técnicos" passar na frente de "Corinthians: Diniz denunciado no STJD" contra um perfil de futebol. A explicabilidade do card herdava a distorção, porque os termos de "porque você acompanha" saem ordenados por contribuição.
+>
+> Com a conta corrigida, os valores da tabela são os medidos sobre 20 perfis contra os 1576 candidatos da janela, 11604 pares com alguma sobreposição.
+
+`W_RECENCIA = 0.04` põe a barra logo abaixo do p90 de 0.044, então um candidato no décimo superior de afinidade vale doze horas de idade e o resto é ordenado por frescor. O valor anterior era 0.025, escolhido pela mesma regra contra a distribuição errada. **O primeiro valor tentado foi 0.10**, escolhido por analogia com os cossenos entre artigos, e ele estava acima do p99: nada que o leitor curtiu conseguia superar uma matéria nova sobre coisa nenhuma. O perfil virava decoração e o feed, um relógio. A constante continua provisória e continua sendo trabalho da fatia 8, mas agora é medida com significado declarado em vez de número escolhido no olho.
 
 ### O peso do vetor negativo, e o piso que ele precisou
 
 O `hide` entra como `- BETA * cos(perfil_negativo, item)`, fora do decay. Fora, e não dentro, porque dentro dele uma matéria rejeitada seria perdoada por envelhecer, e dois dias depois o feed voltaria justamente ao assunto que o leitor mandou sair.
 
-**O primeiro valor tentado foi `BETA = 1.0`**, pela simetria com `W_GOSTO`: os dois lados são cossenos medidos do mesmo jeito, e `like` e `hide` pesam igual no log. O argumento estava certo sobre os dois cossenos e errado sobre o score de onde um deles é subtraído. Uma matéria intocada deste momento marca `W_RECENCIA`, que é 0.025, então uma penalidade de 0.005 por partilhar a palavra `experiência` já punha o card abaixo de tudo que era fresco.
+**O primeiro valor tentado foi `BETA = 1.0`**, pela simetria com `W_GOSTO`: os dois lados são cossenos medidos do mesmo jeito, e `like` e `hide` pesam igual no log. O argumento estava certo sobre os dois cossenos e errado sobre o score de onde um deles é subtraído. Uma matéria intocada deste momento marca `W_RECENCIA`, então uma penalidade de 0.005 por partilhar a palavra `experiência` já punha o card abaixo de tudo que era fresco: um único `hide` alcançou 294 dos 1576 candidatos e jogou todos abaixo de zero.
 
 Medido escondendo um cluster só, "Diego Souza é anunciado como novo técnico do Joinville", contra a janela ao vivo de 1576 candidatos: ele alcançou **294 deles**, e a ordenação desses 294 não era uma ordenação de futebol.
 
@@ -264,13 +270,21 @@ Medido escondendo um cluster só, "Diego Souza é anunciado como novo técnico d
 
 O que fica logo abaixo de 0.10 é **polissemia**, a fraqueza permanente de um saco de lemas: `técnico` é treinador e é curso técnico, `aposentar` é sair do futebol e é puxar aposentadoria. Um modelo sem sintaxe não separa os dois, então a saída honesta é recusar evidência tão fina em vez de fingir que o número diz o que não diz. Daí `NEGATIVE_FLOOR = 0.10`, que deixa passar 3 dos 1576. Cobertura real de um mesmo fato marca 0.25 a 0.67, bem acima disso, então nada que o leitor reconheceria como o assunto escondido é barrado.
 
-E `BETA = 0.2`, com a mesma leitura verificável que `W_RECENCIA` tem:
+Esse piso sobreviveu à correção do produto escalar, porque a tabela acima foi medida como cosseno verdadeiro desde o começo, por fora do código. Quem discordava dela era o ranking, não a medição.
 
-> **`BETA` fixa quanto custa a semelhança mais forte possível, e em 0.2 isso é cerca de uma meia-vida de frescor.**
+E `BETA = 0.1`, com a mesma leitura verificável que `W_RECENCIA` tem:
 
-**Achado que fica registrado porque contradiz o desenho:** mesmo assim a frase "menos relevante porque você escondeu" quase nunca chega à tela. A pior penalidade custa 0.031, e o intervalo inteiro de score dentro de uma página de 24 cards é menor que isso (0.045 no primeiro, 0.031 no sexto, medidos na janela ao vivo). Num acervo de 1576 candidatos ordenado por recência, **qualquer card que passe do piso negativo cai para fora da página, e lá não tem onde se explicar**. A direção positiva aparece em 24 de 24 cards; a negativa só aparece quando o leitor curtiu e escondeu coisas que se cruzam na mesma matéria.
+> **`BETA` fixa quanto custa a semelhança mais forte medida, e em 0.1 isso é cerca de uma meia-vida de frescor.**
 
-Ou seja, a explicação negativa está correta e é estruturalmente rara. Torná-la visível não é questão de calibrar `BETA`: uma penalidade pequena o bastante para o card ficar na página é pequena demais para significar alguma coisa. Se o diferencial precisa ser visto, ele pede uma superfície própria, do tipo "o que seu hide está afastando", e isso é desenho novo, não ajuste de constante.
+O máximo observado é 0.381, então o pior caso custa 0.038 contra um piso de 0.04. Acima do `NEGATIVE_FLOOR` a penalidade vai de 0.010 a 0.038: rebaixamento real, e nunca mais do que o piso inteiro vale. O teto importa por um motivo específico: **se o score passasse a negativo, o decay inverteria**, porque multiplicar um negativo por um número menor o aumenta, e a mais velha de duas matérias indesejadas subiria acima da mais nova. É a mesma inversão que os dois vetores separados existem para evitar.
+
+### Onde a direção negativa se explica
+
+Um `hide` faz duas coisas: tira aquele cluster, e rebaixa tudo que se parece com ele. O leitor enxerga a primeira e não a segunda, e a razão é aritmética. A pior penalidade custa 0.038, e o intervalo inteiro de score dentro de uma página de 24 cards é menor que isso. Num acervo de 1576 candidatos ordenado por recência, **qualquer card que passe do piso negativo cai para fora da página, e lá não tem onde se explicar**.
+
+Isso não se resolve calibrando `BETA`: uma penalidade pequena o bastante para o card ficar na página é pequena demais para significar alguma coisa. Então a resposta é uma superfície própria. O feed devolve `held_back` ao lado de `feed`, com até cinco matérias que a própria penalidade empurrou para fora, cada uma nomeando o termo que causou. Elas não entram na lista, porque não são matérias que o ranking escolheu mostrar: são a prestação de contas do que ele escolheu não mostrar.
+
+Medido escondendo "novo técnico do Joinville", o bloco devolve exatamente as três do topo da tabela, com `ex-jogador` e `treinador` como causa, e o `técnico` do IFMG barrado pelo piso.
 
 O produto escalar acontece **no banco**, não em Python. Com os vetores serializados num campo JSON, montar um feed exigiria trazer milhares de blobs pra memória do processo e parsear todos, o que é da ordem de centenas de milissegundos e alguns megabytes por request, num ambiente serverless onde tempo de execução é o que se paga, e que cresce linearmente até quebrar.
 

@@ -96,11 +96,11 @@ class TestScore:
         assert math.isclose(matched_but_older, unmatched_but_fresh)
 
     def test_a_top_decile_match_outranks_a_fresh_story_about_nothing(self):
-        """0.028 was the ninetieth percentile of measured profile to candidate
+        """0.044 was the ninetieth percentile of measured profile to candidate
         cosine on the live window. A candidate that good has to be worth being
         half a day old, or the ranking is a clock with extra steps.
         """
-        assert score(0.028, age_hours=HALF_LIFE_HOURS) > score(0.0, age_hours=0)
+        assert score(0.044, age_hours=HALF_LIFE_HOURS) > score(0.0, age_hours=0)
 
     def test_a_story_old_enough_ranks_below_a_worse_but_fresher_one(self):
         """The decay multiplies the whole thing, floor included.
@@ -144,13 +144,13 @@ class TestNegativeProfile:
     def test_the_worst_resemblance_costs_about_one_half_life(self):
         """The sentence BETA is supposed to mean, checked.
 
-        0.155 was the strongest cosine observed between a profile and a candidate
+        0.381 was the strongest cosine observed between a profile and a candidate
         on the live window. What it costs has to land near the floor, which is
         itself defined as the affinity worth one half life. Much more than that
         and the card is banished instead of demoted, which is the failure the
         first value chosen here actually produced.
         """
-        worst = BETA * 0.155
+        worst = BETA * 0.381
 
         assert 0.5 * W_RECENCIA < worst < 2.0 * W_RECENCIA
 
@@ -172,25 +172,48 @@ class TestNegativeProfile:
         can never be seen and the reason it carries is written for nobody. With
         both cosines at the strongest observed on the live window, it does.
         """
-        both_sides = score(0.155, age_hours=0, penalty=0.155)
+        both_sides = score(0.381, age_hours=0, penalty=0.381)
         fresh_and_plain = score(0.0, age_hours=0)
 
         assert both_sides > fresh_and_plain
 
-    def test_with_nothing_liked_yet_a_strong_resemblance_still_goes_to_the_bottom(self):
-        """Stated rather than wished away.
+    def test_the_worst_case_costs_almost_the_whole_floor_and_no_more(self):
+        """Where the corrected BETA lands, stated as a bound in both directions.
 
-        A reader who has hidden something and liked nothing has an empty
-        positive side, so every candidate scores the recency floor and the worst
-        penalty, 0.031, is larger than that floor of 0.025. Those cards go under
-        everything. That is the correct reading of the only preference this
-        reader has expressed, and it is also why the explanation shows up for
-        readers who have answered in both directions rather than for this one.
+        A reader who has hidden something and liked nothing has an empty positive
+        side, so every candidate scores the recency floor and the strongest
+        resemblance gives back almost all of it: 0.0019 of 0.04. The card sinks
+        under everything inside the 48 hour window, which is the correct reading
+        of the only preference this reader has expressed.
+
+        What it must not do is go negative. Below zero the ordering among
+        rejected stories stops meaning anything, because the decay can no longer
+        separate them, and that was the failure of the first BETA.
         """
-        assert score(0.0, age_hours=0, penalty=0.155) < 0
-        assert score(0.0, age_hours=0, penalty=0.155) < score(
-            0.0, age_hours=4 * HALF_LIFE_HOURS
-        )
+        worst = score(0.0, age_hours=0, penalty=0.381)
+
+        assert 0 < worst < 0.1 * W_RECENCIA
+        assert worst < score(0.0, age_hours=48)
+
+    def test_two_rejected_stories_are_still_ordered_by_freshness(self):
+        """The reason the penalty has to stay smaller than the floor.
+
+        Once scores go negative the decay inverts: multiplying a negative by a
+        smaller number makes it larger, so the older of two unwanted stories
+        would rank higher. Keeping the worst case inside the floor is what stops
+        that, and it is the same inversion the two separate vectors exist to
+        avoid in the first place.
+        """
+        assert score(0.0, age_hours=1, penalty=0.35) > score(0.0, age_hours=30, penalty=0.35)
+
+    def test_the_hidden_subject_still_loses_to_a_plain_fresh_story(self):
+        """The gesture has to be worth making.
+
+        A story that looks like what the reader rejected must come out under an
+        untouched one of the same moment, however strong its own freshness.
+        """
+        assert score(0.0, age_hours=0, penalty=0.12) < score(0.0, age_hours=0)
+        assert score(0.0, age_hours=0, penalty=0.381) < score(0.0, age_hours=0)
 
     def test_the_penalty_does_not_decay_away(self):
         """The penalty sits outside the decay on purpose.

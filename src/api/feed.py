@@ -36,17 +36,46 @@ PAGE = 24
 # being a reason and starts being a dump.
 REASONS = 3
 
+# How many demoted stories the feed owns up to.
+#
+# A hide does two things: it removes the cluster it was aimed at, and it pushes
+# down everything that resembles it. The reader can see the first and never the
+# second, because the penalty is larger than the whole spread of scores inside a
+# page, so anything it touches lands well outside PAGE. The explanation the card
+# carries is then written for nobody.
+#
+# These come back separately so the screen can say what was moved. A handful is
+# the point: this is an account of what the reader's own gesture did, not a
+# second feed of things they asked not to see.
+HELD_BACK = 5
+
 
 async def corpus_size(env) -> int:
     row = await query(env, "SELECT total_docs FROM corpus_stats WHERE id = 1")
     return row[0]["total_docs"] if row else 0
 
 
-async def contributions(env, weighted: dict[str, float]) -> dict[int, dict[str, float]]:
+async def contributions(
+    env, weighted: dict[str, float], factors: dict[str, float]
+) -> dict[int, dict[str, float]]:
     """How much each profile term contributes to each candidate.
 
     Returns cluster id to term to contribution. Summing the inner dict gives the
     dot product; sorting it gives the reason.
+
+    What gets bound per term is the profile weight times that term's IDF again,
+    and the second IDF is the candidate's, not a repetition. `article_terms`
+    stores raw TF, so the product the database computes is
+    `tf_candidato * (tf_perfil * idf * idf)`, which regroups into
+    `(tf_candidato * idf) * (tf_perfil * idf)`: both sides weighed once, which is
+    the numerator of a cosine whose denominator is already measured that way.
+
+    Binding only the profile weight left the candidate unweighted while
+    `feed_candidates.norm` was not, and the error was not a scale factor that
+    cancels. Against the live window it ran from 3.1x to 7.2x depending on which
+    terms matched, which compresses every candidate into a narrow band and lets
+    a story matching on `tecnico` the school subject outrank one matching on
+    `tecnico` the football coach.
     """
     terms = strongest(weighted, PROFILE_TERMS)
     if not terms:
@@ -54,7 +83,9 @@ async def contributions(env, weighted: dict[str, float]) -> dict[int, dict[str, 
 
     cases = " ".join(["WHEN ? THEN ?"] * len(terms))
     placeholders = ", ".join("?" * len(terms))
-    params = [value for term in terms for value in (term, weighted[term])] + terms
+    params = [
+        value for term in terms for value in (term, weighted[term] * factors.get(term, 0.0))
+    ] + terms
 
     rows = await query(
         env,
@@ -86,7 +117,26 @@ async def candidates(env) -> list[dict]:
 def rank(
     rows, matched, profile_norm, answered, now, avoided=None, avoided_norm=0.0
 ) -> list[dict]:
-    """Scores every candidate and returns a page of them, best first.
+    """The page: the best of what `scored` produced."""
+    return scored(rows, matched, profile_norm, answered, now, avoided, avoided_norm)[:PAGE]
+
+
+def held_back(everything: list[dict]) -> list[dict]:
+    """Stories a hide pushed off the page, worst hit first.
+
+    Read from beyond the page rather than from within it, because that is where
+    the penalty puts them. A card that was penalised and placed anyway needs no
+    account of itself: it is on screen carrying its own reason.
+    """
+    beyond = [card for card in everything[PAGE:] if card["penalty"] > 0]
+    beyond.sort(key=lambda card: -card["penalty"])
+    return beyond[:HELD_BACK]
+
+
+def scored(
+    rows, matched, profile_norm, answered, now, avoided=None, avoided_norm=0.0
+) -> list[dict]:
+    """Scores every candidate and returns all of them, best first.
 
     A cluster the reader already answered for is dropped rather than scored,
     whether they kept it or hid it. Hiding it is the obvious half. Keeping it
@@ -137,7 +187,7 @@ def rank(
         )
 
     ranked.sort(key=lambda card: -card["score"])
-    return ranked[:PAGE]
+    return ranked
 
 
 def _by_weight(item):
@@ -214,8 +264,10 @@ async def decorate(env, ranked: list[dict]) -> list[dict]:
     return cards
 
 
-async def build(env, profile_vector, negative_vector, answered, now) -> list[dict]:
-    """One reader's feed, from stored profiles to finished cards.
+async def build(
+    env, profile_vector, negative_vector, answered, now
+) -> tuple[list[dict], list[dict]]:
+    """One reader's feed and the stories their own hide pushed out of it.
 
     An empty vector skips its index query entirely: there are no terms to send,
     the cosine is zero either way, and what survives in the formula is the
@@ -227,13 +279,13 @@ async def build(env, profile_vector, negative_vector, answered, now) -> list[dic
     """
     total_docs = await corpus_size(env)
 
-    weighted = await profile.weighted(env, profile_vector, total_docs)
-    avoided = await profile.weighted(env, negative_vector, total_docs)
+    weighted, kept_idf = await profile.weighted(env, profile_vector, total_docs)
+    avoided, avoided_idf = await profile.weighted(env, negative_vector, total_docs)
 
-    matched = await contributions(env, weighted) if weighted else {}
-    against = await contributions(env, avoided) if avoided else {}
+    matched = await contributions(env, weighted, kept_idf) if weighted else {}
+    against = await contributions(env, avoided, avoided_idf) if avoided else {}
 
-    ranked = rank(
+    everything = scored(
         await candidates(env),
         matched,
         norm(weighted),
@@ -242,4 +294,17 @@ async def build(env, profile_vector, negative_vector, answered, now) -> list[dic
         against,
         norm(avoided),
     )
-    return await decorate(env, ranked)
+
+    page = everything[:PAGE]
+    demoted = held_back(everything)
+
+    # One trip to the database for both lists. Splitting them afterwards costs a
+    # set membership test; decorating them separately would cost two more
+    # queries on the one screen that decides whether a visitor stays.
+    cards = await decorate(env, page + demoted)
+    demoted_ids = {card["cluster_id"] for card in demoted}
+
+    return (
+        [card for card in cards if card["cluster_id"] not in demoted_ids],
+        [card for card in cards if card["cluster_id"] in demoted_ids],
+    )

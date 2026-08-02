@@ -16,7 +16,7 @@ import json
 from datetime import UTC, datetime
 
 from api.db import MAX_BOUND_PARAMS, execute, query
-from ranking.vectors import weigh
+from ranking.vectors import idf, weigh
 
 # What each explicit signal is worth. Slice 1 only records two of them; the rest
 # of the funnel arrives later and lands in the same table.
@@ -196,8 +196,17 @@ async def load(env, user_id: str) -> tuple[dict[str, float], dict[str, float]]:
     return _decode(rows[0]["term_vector"]), _decode(rows[0]["neg_term_vector"])
 
 
-async def weighted(env, vector: dict[str, float], total_docs: int) -> dict[str, float]:
+async def weighted(
+    env, vector: dict[str, float], total_docs: int
+) -> tuple[dict[str, float], dict[str, float]]:
     """Applies the IDF of this moment to a stored profile.
+
+    Returns the weighted vector and the IDF that produced it, per term. The
+    second is not a convenience: the dot product happens in SQL against the raw
+    TF the corpus stores, so the value bound per term has to carry the
+    candidate's share of the weighing as well as the profile's. Handing back the
+    factor is what lets the caller do that without asking the database for
+    document counts a second time.
 
     Read in chunks because D1 binds at most 100 parameters per statement, and a
     reader with a few dozen likes carries more distinct terms than that. The
@@ -205,7 +214,7 @@ async def weighted(env, vector: dict[str, float], total_docs: int) -> dict[str, 
     and the weights are what this is on its way to computing.
     """
     if not vector:
-        return {}
+        return {}, {}
 
     terms = sorted(vector)
     counts: dict[str, int] = {}
@@ -219,4 +228,5 @@ async def weighted(env, vector: dict[str, float], total_docs: int) -> dict[str, 
         )
         counts.update({row["term"]: row["doc_count"] for row in rows})
 
-    return weigh(vector, counts, total_docs)
+    factors = {term: idf(counts.get(term, 0), total_docs) for term in vector}
+    return weigh(vector, counts, total_docs), factors

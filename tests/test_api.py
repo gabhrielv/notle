@@ -392,6 +392,53 @@ class TestRank:
         assert card["penalty"] > 0
 
 
+class TestHeldBack:
+    """The account the feed gives of what a hide moved.
+
+    A penalty is larger than the whole spread of scores inside a page, so
+    anything it touches lands well outside it. Without this list the reader sees
+    a cluster disappear and never learns that the same gesture pushed others
+    down, which is the half of slice 3 the card could not deliver.
+    """
+
+    def card(self, cluster_id, penalty=0.0):
+        return {"cluster_id": cluster_id, "penalty": penalty}
+
+    def test_a_reader_who_hid_nothing_is_told_nothing(self):
+        everything = [self.card(i) for i in range(feed.PAGE + 20)]
+
+        assert feed.held_back(everything) == []
+
+    def test_only_what_the_penalty_pushed_past_the_page_is_counted(self):
+        """A story that is merely far down is not a story that was moved. Only a
+        penalty makes it the reader's own doing, and only that is worth naming.
+        """
+        everything = [self.card(i) for i in range(feed.PAGE)]
+        everything += [self.card(900, 0.13), self.card(901), self.card(902, 0.11)]
+
+        assert [c["cluster_id"] for c in feed.held_back(everything)] == [900, 902]
+
+    def test_a_penalised_card_that_still_made_the_page_is_left_alone(self):
+        """It is on screen carrying its own reason, so repeating it below would
+        be the same explanation twice.
+        """
+        everything = [self.card(1, 0.14)] + [self.card(i) for i in range(2, feed.PAGE + 5)]
+
+        assert feed.held_back(everything) == []
+
+    def test_the_worst_hit_come_first(self):
+        everything = [self.card(i) for i in range(feed.PAGE)]
+        everything += [self.card(900, 0.11), self.card(901, 0.15), self.card(902, 0.13)]
+
+        assert [c["cluster_id"] for c in feed.held_back(everything)] == [901, 902, 900]
+
+    def test_it_is_an_account_and_not_a_second_feed(self):
+        everything = [self.card(i) for i in range(feed.PAGE)]
+        everything += [self.card(900 + i, 0.13) for i in range(40)]
+
+        assert len(feed.held_back(everything)) == feed.HELD_BACK
+
+
 class TestContributions:
     def test_folds_rows_into_cluster_then_term(self, monkeypatch):
         env = patched(
@@ -407,15 +454,37 @@ class TestContributions:
             ),
         )
 
-        matched = asyncio.run(feed.contributions(env, {"selic": 1.0, "copom": 0.5}))
+        matched = asyncio.run(
+            feed.contributions(env, {"selic": 1.0, "copom": 0.5}, {"selic": 2.0, "copom": 3.0})
+        )
 
         assert matched == {1: {"selic": 0.4, "copom": 0.2}, 2: {"selic": 0.1}}
+
+    def test_the_bound_weight_carries_both_sides_of_the_idf(self, monkeypatch):
+        """The regression this whole module turns on.
+
+        `article_terms` holds raw TF, so what the database multiplies it by has
+        to contain the candidate's IDF as well as the profile's, or the numerator
+        is weighed once while `feed_candidates.norm` is weighed twice.
+
+        Binding only the profile weight is not an error that cancels: measured
+        against the live window it ran from 3.1x to 7.2x depending on which terms
+        matched, compressing every candidate into a band 0.017 to 0.021 wide and
+        letting a story about technical courses outrank one about a football
+        coach.
+        """
+        env = patched(monkeypatch, FakeEnv())
+
+        asyncio.run(feed.contributions(env, {"selic": 0.5}, {"selic": 4.0}))
+
+        _, params = env.calls[0]
+        assert params[:2] == ["selic", 2.0]
 
     def test_an_empty_profile_never_reaches_the_database(self, monkeypatch):
         """The cold start path costs one query less than the personalized one."""
         env = patched(monkeypatch, FakeEnv())
 
-        assert asyncio.run(feed.contributions(env, {})) == {}
+        assert asyncio.run(feed.contributions(env, {}, {})) == {}
         assert env.calls == []
 
     def test_the_query_stays_under_the_bound_parameter_ceiling(self, monkeypatch):
@@ -427,7 +496,7 @@ class TestContributions:
         env = patched(monkeypatch, FakeEnv())
         wide = {f"termo{i}": 1.0 / (i + 1) for i in range(200)}
 
-        asyncio.run(feed.contributions(env, wide))
+        asyncio.run(feed.contributions(env, wide, dict.fromkeys(wide, 2.0)))
 
         _, params = env.calls[0]
         assert len(params) == feed.PROFILE_TERMS * 3

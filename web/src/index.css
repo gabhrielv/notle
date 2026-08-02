@@ -1,111 +1,396 @@
+/*
+ * Ink on newsprint.
+ *
+ * The palette is deliberately a cool grey green rather than the warm cream that
+ * every editorial layout reaches for. Brazilian newsprint is grey, and the
+ * difference is what keeps the page from reading as a template.
+ *
+ * One accent, borrowed from offset printing: registration magenta. It is
+ * reserved for the one thing this product does that other aggregators do not,
+ * which is showing that several portals landed on the same story.
+ */
+
 :root {
-  --text: #6b6375;
-  --text-h: #08060d;
-  --bg: #fff;
-  --border: #e5e4e7;
-  --code-bg: #f4f3ec;
-  --accent: #aa3bff;
-  --accent-bg: rgba(170, 59, 255, 0.1);
-  --accent-border: rgba(170, 59, 255, 0.5);
-  --social-bg: rgba(244, 243, 236, 0.5);
-  --shadow:
-    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
+  --paper: #e4e3d9;
+  --surface: #edece4;
+  --sunk: #d3d2c6;
+  --ink: #15140f;
+  --ink-2: #56554c;
+  --reg: #c4005c;
+  --rule: rgba(21, 20, 15, 0.14);
+  --dot: rgba(21, 20, 15, 0.16);
 
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
+  --display: 'Newsreader', Georgia, 'Times New Roman', serif;
+  --ui: 'Archivo', system-ui, sans-serif;
+  --mono: 'IBM Plex Mono', ui-monospace, monospace;
 
-  font: 18px/145% var(--sans);
-  letter-spacing: 0.18px;
   color-scheme: light dark;
-  color: var(--text);
-  background: var(--bg);
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-
-  @media (max-width: 1024px) {
-    font-size: 16px;
-  }
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
-    --border: #2e303a;
-    --code-bg: #1f2028;
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.15);
-    --accent-border: rgba(192, 132, 252, 0.5);
-    --social-bg: rgba(47, 48, 58, 0.5);
-    --shadow:
-      rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
-  }
-
-  #social .button-icon {
-    filter: invert(1) brightness(2);
+    --paper: #131410;
+    --surface: #1b1c16;
+    --sunk: #0d0e0a;
+    --ink: #e7e5da;
+    --ink-2: #a3a197;
+    --reg: #ff4d93;
+    --rule: rgba(231, 229, 218, 0.16);
+    --dot: rgba(231, 229, 218, 0.1);
   }
 }
 
-#root {
-  width: 1126px;
-  max-width: 100%;
-  margin: 0 auto;
-  text-align: center;
-  border-inline: 1px solid var(--border);
-  min-height: 100svh;
-  display: flex;
-  flex-direction: column;
+*,
+*::before,
+*::after {
   box-sizing: border-box;
 }
 
 body {
   margin: 0;
+  min-height: 100dvh;
+  background-color: var(--paper);
+  background-image: radial-gradient(
+    120% 80% at 50% -10%,
+    var(--surface) 0%,
+    var(--paper) 45%,
+    var(--sunk) 100%
+  );
+  background-attachment: fixed;
+  color: var(--ink);
+  font-family: var(--ui);
+  -webkit-font-smoothing: antialiased;
 }
 
-h1,
-h2 {
-  font-family: var(--heading);
-  font-weight: 500;
-  color: var(--text-h);
+/* The halftone screen. A print artifact rather than a decorative texture, and
+   cheap enough to be a gradient instead of an image. */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image: radial-gradient(var(--dot) 0.5px, transparent 0.6px);
+  background-size: 4px 4px;
+  opacity: 0.6;
 }
 
-h1 {
-  font-size: 56px;
-  letter-spacing: -1.68px;
-  margin: 32px 0;
-  @media (max-width: 1024px) {
-    font-size: 36px;
-    margin: 20px 0;
-  }
+:focus-visible {
+  outline: 2px solid var(--reg);
+  outline-offset: 3px;
 }
-h2 {
-  font-size: 24px;
-  line-height: 118%;
-  letter-spacing: -0.24px;
-  margin: 0 0 8px;
-  @media (max-width: 1024px) {
-    font-size: 20px;
-  }
+
+/* ---------- shell ---------- */
+
+.shell {
+  position: relative;
+  z-index: 1;
+  max-width: 48rem;
+  margin-inline: auto;
+  padding: 2.5rem 1.25rem 6rem;
 }
-p {
+
+.masthead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  flex-wrap: wrap;
+  padding-bottom: 0.9rem;
+  border-bottom: 2px solid var(--ink);
+}
+
+.wordmark {
   margin: 0;
+  font-family: var(--display);
+  font-size: 2.1rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1;
 }
 
-code,
-.counter {
+.wordmark span {
+  color: var(--reg);
+}
+
+.standfirst {
+  margin: 0;
   font-family: var(--mono);
-  display: inline-flex;
-  border-radius: 4px;
-  color: var(--text-h);
+  font-size: 0.72rem;
+  color: var(--ink-2);
 }
 
-code {
-  font-size: 15px;
-  line-height: 135%;
-  padding: 4px 8px;
-  background: var(--code-bg);
+.hint {
+  margin: 1.5rem 0 0;
+  padding: 0.85rem 1rem;
+  border-left: 2px solid var(--reg);
+  background: color-mix(in srgb, var(--reg) 7%, transparent);
+  font-size: 0.85rem;
+  line-height: 1.45;
+  color: var(--ink-2);
+}
+
+/* ---------- cards ---------- */
+
+.feed {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.card {
+  display: grid;
+  /* minmax(0, 1fr) rather than 1fr: a grid track's automatic minimum is its
+     content, so a long headline or a row of source plates widens the column
+     past the viewport instead of wrapping inside it. */
+  grid-template-columns: 2.75rem minmax(0, 1fr);
+  column-gap: 1rem;
+  padding: 1.75rem 0;
+  border-bottom: 1px solid var(--rule);
+  animation: rise 520ms cubic-bezier(0.2, 0.7, 0.3, 1) backwards;
+  animation-delay: calc(var(--i) * 55ms);
+}
+
+.card.is-leaving {
+  opacity: 0;
+  transform: translateY(-6px);
+  transition:
+    opacity 220ms ease,
+    transform 220ms ease;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+
+.gutter {
+  grid-row: 1 / span 5;
+  padding-top: 0.35rem;
+}
+
+.mark {
+  color: var(--ink-2);
+  overflow: visible;
+}
+
+.kicker {
+  margin: 0 0 0.45rem;
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  max-width: 30rem;
+  overflow-wrap: break-word;
+}
+
+.headline {
+  margin: 0;
+  font-family: var(--display);
+  font-size: 1.5rem;
+  font-weight: 500;
+  line-height: 1.16;
+  letter-spacing: -0.011em;
+  text-wrap: balance;
+  overflow-wrap: break-word;
+}
+
+.card.is-lead .headline {
+  font-size: clamp(1.95rem, 5.2vw, 2.85rem);
+  line-height: 1.04;
+  letter-spacing: -0.022em;
+}
+
+.headline a {
+  color: inherit;
+  text-decoration: none;
+  background-image: linear-gradient(var(--reg), var(--reg));
+  background-size: 0 1px;
+  background-position: 0 100%;
+  background-repeat: no-repeat;
+  transition: background-size 260ms ease;
+}
+
+.headline a:hover {
+  background-size: 100% 1px;
+}
+
+.byline {
+  margin: 0.55rem 0 0;
+  font-family: var(--mono);
+  font-size: 0.74rem;
+  color: var(--ink-2);
+}
+
+.byline b {
+  font-weight: 500;
+  color: var(--ink);
+}
+
+/* ---------- the signature: plates coming into register ---------- */
+
+.register {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.3rem 0.55rem;
+  margin-top: 0.7rem;
+}
+
+.register-label {
+  font-size: 0.7rem;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--reg);
+}
+
+.plate {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--ink);
+  padding: 0.1rem 0.4rem;
+  border: 1px solid var(--rule);
+  animation: register 620ms cubic-bezier(0.16, 0.9, 0.3, 1) backwards;
+  animation-delay: calc(var(--i) * 55ms + var(--p) * 90ms + 160ms);
+}
+
+/* Out of register, then aligned. The offset is the whole idea: separate plates
+   landing on one story. */
+@keyframes register {
+  from {
+    opacity: 0;
+    transform: translate(var(--dx), var(--dy));
+    border-color: var(--reg);
+  }
+  55% {
+    opacity: 1;
+  }
+}
+
+.tally {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--ink-2);
+}
+
+/* ---------- actions ---------- */
+
+.actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.action {
+  font-family: var(--ui);
+  font-size: 0.76rem;
+  font-weight: 500;
+  color: var(--ink);
+  background: transparent;
+  border: 1px solid var(--rule);
+  padding: 0.4rem 0.85rem;
+  cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    color 160ms ease;
+}
+
+.action:hover {
+  border-color: var(--ink);
+}
+
+.action.is-keep:hover {
+  color: var(--reg);
+  border-color: var(--reg);
+}
+
+.action:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+/* ---------- skeleton, empty, error ---------- */
+
+.bone {
+  background: linear-gradient(90deg, var(--sunk), var(--surface), var(--sunk));
+  background-size: 200% 100%;
+  animation: sweep 1.5s ease-in-out infinite;
+}
+
+@keyframes sweep {
+  to {
+    background-position: -200% 0;
+  }
+}
+
+.bone-kicker {
+  height: 0.55rem;
+  width: 5.5rem;
+  margin-bottom: 0.7rem;
+}
+
+.bone-line {
+  height: 1.15rem;
+  margin-bottom: 0.5rem;
+}
+
+.bone-line.is-short {
+  width: 62%;
+}
+
+.bone-meta {
+  height: 0.6rem;
+  width: 9rem;
+  margin-top: 0.8rem;
+}
+
+.notice {
+  margin-top: 3rem;
+  padding-top: 2rem;
+  border-top: 2px solid var(--ink);
+}
+
+.notice-title {
+  margin: 0 0 0.5rem;
+  font-family: var(--display);
+  font-size: 1.5rem;
+  font-weight: 500;
+}
+
+.notice-body {
+  margin: 0 0 1rem;
+  color: var(--ink-2);
+  font-size: 0.9rem;
+  line-height: 1.5;
+  max-width: 32rem;
+}
+
+@media (max-width: 34rem) {
+  .card {
+    grid-template-columns: 1.75rem minmax(0, 1fr);
+    column-gap: 0.75rem;
+  }
+
+  .shell {
+    padding-top: 1.75rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    /* The delay has to go too. The reveal fills backwards, so a card or a
+       source plate holds its opening state, invisible, for as long as its
+       stagger lasts. Killing only the duration would leave a reader who asked
+       for less motion watching the feed appear in pieces anyway. */
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

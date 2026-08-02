@@ -41,9 +41,9 @@ async def read_feed(request, env):
     """
     user, is_new = await users.identify(env, request.headers.get("Cookie"))
 
-    stored = await profile.load(env, user["id"])
+    stored, avoided = await profile.load(env, user["id"])
     answered = await profile.acted_on(env, user["id"])
-    cards = await feed.build(env, stored, answered, datetime.now(UTC))
+    cards = await feed.build(env, stored, avoided, answered, datetime.now(UTC))
 
     headers = {
         # Personalized, so it must never be held by a cache between the reader
@@ -56,7 +56,11 @@ async def read_feed(request, env):
     return Response.json(
         {
             "user": {"is_new": is_new, "discovery_ratio": user["discovery_ratio"]},
-            "profile": {"terms": len(stored), "empty": not stored},
+            "profile": {
+                "terms": len(stored),
+                "empty": not stored,
+                "hidden_terms": len(avoided),
+            },
             "feed": cards,
         },
         headers=headers,
@@ -100,13 +104,16 @@ async def record(request, env):
         ],
     )
 
-    vector = await profile.rebuild(env, user["id"])
+    vector, avoided = await profile.rebuild(env, user["id"])
 
     headers = {"Cache-Control": "private, no-store"}
     if is_new:
         headers["Set-Cookie"] = users.set_cookie(user["id"])
 
-    return Response.json({"ok": True, "profile": {"terms": len(vector)}}, headers=headers)
+    return Response.json(
+        {"ok": True, "profile": {"terms": len(vector), "hidden_terms": len(avoided)}},
+        headers=headers,
+    )
 
 
 ROUTES = {

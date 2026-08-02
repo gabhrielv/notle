@@ -1,6 +1,7 @@
 """Turns affinity and age into a position in the feed.
 
     score = (W_GOSTO * cosine(profile, cluster) + W_RECENCIA) * decay(age)
+            - BETA * cosine(negative_profile, cluster)
 
 The recency floor sits inside the decay rather than beside it, and that is the
 whole reason the formula holds together for a visitor who has done nothing yet.
@@ -50,6 +51,56 @@ from datetime import datetime
 W_GOSTO = 1.0
 W_RECENCIA = 0.025
 
+# Below this, two stories share vocabulary rather than a subject.
+#
+# Measured by hiding one cluster, "Diego Souza e anunciado como novo tecnico do
+# Joinville", and reading every candidate it touched in the live window. It
+# reached 294 of 1593, and the ranking of those was not a ranking of football:
+#
+#     0.139  Pentacampeao passa por cateterismo          the subject
+#     0.122  Corinthians: Diniz denunciado no STJD       the subject
+#     0.119  Vasco x Fluminense                          the subject
+#     ------------------------------------------------- floor
+#     0.080  IFMG abre vagas para cursos tecnicos        `tecnico`
+#     0.063  Endrick no Real Madrid                      the subject
+#     0.056  C6 condenado, aposentado lesado             `aposentar`
+#     0.055  Xuxa anuncia terceiro show                  `experiencia`
+#
+# What sits just under 0.10 is polysemy, which is the standing weakness of a bag
+# of lemmas: `tecnico` is a coach and a technical course, `aposentar` is leaving
+# football and drawing a pension. A model with no syntax cannot tell those
+# apart, so the honest move is to refuse to act on evidence that thin rather
+# than to pretend the number means what it does not.
+#
+# Real coverage of one event scores 0.25 to 0.67 against itself, well clear of
+# this, so nothing a reader would recognise as the hidden subject is let through.
+NEGATIVE_FLOOR = 0.10
+
+# What a hidden subject costs a story that genuinely resembles it.
+#
+# Read the same way W_RECENCIA is, as a sentence that can be checked:
+#
+#     BETA sets what the strongest possible resemblance costs, and at 0.2 that
+#     is about one half life of freshness.
+#
+# The first value tried here was 1.0, on the argument that it is symmetric with
+# W_GOSTO and that `like` and `hide` weigh the same in the log. The argument was
+# right about the two cosines and wrong about the score they are subtracted
+# from. An untouched story of this moment scores W_RECENCIA, which is 0.025, so
+# a penalty of 0.005 for sharing the word `experiencia` already put a card below
+# everything fresh. One hide removed 294 stories, and the explanation the card
+# was supposed to carry never reached a screen, because a penalised card can
+# never outrank an unpenalised one.
+#
+# At 0.2 the worst case costs 0.031 against a floor of 0.025. The story drops,
+# and stays where it can be seen dropping, which is what "menos relevante"
+# claims and what banishment does not.
+#
+# The penalty sits outside the decay, and that is deliberate. Inside it, a
+# rejected story would be forgiven for getting old, and the feed would drift
+# back toward exactly the subject the reader asked it to drop.
+BETA = 0.2
+
 # News dies in 48 hours. At a 12 hour half life a story from two days ago carries
 # 6% of the weight of one from now, which is small enough to keep the feed from
 # looking stale and large enough that a good old story can still outrank a dull
@@ -82,9 +133,25 @@ def similarity(dot: float, profile_norm: float, cluster_norm: float) -> float:
     return dot / magnitude if magnitude else 0.0
 
 
-def score(similarity_value: float, age_hours: float) -> float:
-    """Where a candidate lands, given how well it matches and how old it is."""
-    return (W_GOSTO * similarity_value + W_RECENCIA) * decay(age_hours)
+def rejection(negative_cosine: float) -> float:
+    """How much of a negative cosine counts, which below the floor is none.
+
+    A hard cut rather than a taper. A taper would still let a card lose a little
+    for sharing the word `experiencia`, and the card names its reasons on screen,
+    so any penalty worth applying has to be one worth printing.
+    """
+    return negative_cosine if negative_cosine >= NEGATIVE_FLOOR else 0.0
+
+
+def score(similarity_value: float, age_hours: float, penalty: float = 0.0) -> float:
+    """Where a candidate lands: how well it matches, how old it is, what it recalls.
+
+    `penalty` is the cosine against the reader's negative profile, in [0, 1],
+    already through `rejection`. It defaults to zero because most visitors have
+    hidden nothing, and that path should read as the same expression with one
+    term absent rather than as a branch.
+    """
+    return (W_GOSTO * similarity_value + W_RECENCIA) * decay(age_hours) - BETA * penalty
 
 
 def age_in_hours(published_at: str, now: datetime) -> float:

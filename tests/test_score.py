@@ -9,11 +9,14 @@ import math
 from datetime import UTC, datetime
 
 from ranking.score import (
+    BETA,
     HALF_LIFE_HOURS,
+    NEGATIVE_FLOOR,
     W_GOSTO,
     W_RECENCIA,
     age_in_hours,
     decay,
+    rejection,
     score,
     similarity,
 )
@@ -106,6 +109,107 @@ class TestScore:
         from this morning, or the feed stops being news.
         """
         assert score(1.0, age_hours=72) < score(0.0, age_hours=1)
+
+
+class TestRejection:
+    """Which negative cosines the ranking is willing to act on."""
+
+    def test_shared_vocabulary_is_not_a_shared_subject(self):
+        """0.08 was a story about technical courses matching one about a football
+        coach, on the word `tecnico`. A bag of lemmas cannot tell those apart, so
+        below the floor the evidence is refused rather than discounted.
+        """
+        assert rejection(0.08) == 0.0
+
+    def test_the_subject_itself_gets_through(self):
+        """0.139, 0.122 and 0.119 were the three genuine football stories the
+        measurement found. All of them have to survive the cut.
+        """
+        assert rejection(0.139) == 0.139
+        assert rejection(NEGATIVE_FLOOR) == NEGATIVE_FLOOR
+
+    def test_nothing_in_common_costs_nothing(self):
+        assert rejection(0.0) == 0.0
+
+
+class TestNegativeProfile:
+    """What a hidden subject costs a story that resembles it."""
+
+    def test_a_reader_who_has_hidden_nothing_pays_nothing(self):
+        """The common path. Almost nobody hides anything, and that path has to be
+        the same expression with one term absent rather than a separate branch.
+        """
+        assert score(0.05, age_hours=3) == score(0.05, age_hours=3, penalty=0.0)
+
+    def test_the_worst_resemblance_costs_about_one_half_life(self):
+        """The sentence BETA is supposed to mean, checked.
+
+        0.155 was the strongest cosine observed between a profile and a candidate
+        on the live window. What it costs has to land near the floor, which is
+        itself defined as the affinity worth one half life. Much more than that
+        and the card is banished instead of demoted, which is the failure the
+        first value chosen here actually produced.
+        """
+        worst = BETA * 0.155
+
+        assert 0.5 * W_RECENCIA < worst < 2.0 * W_RECENCIA
+
+    def test_resembling_the_hidden_side_sinks_below_an_unknown_story(self):
+        """Hiding has to reach past the one card it was aimed at.
+
+        A story about nothing the reader has an opinion on scores the floor. One
+        that looks like what they rejected must come out under it, or the hide
+        did nothing except remove a single cluster.
+        """
+        assert score(0.0, age_hours=0, penalty=0.12) < score(0.0, age_hours=0)
+
+    def test_taste_outweighs_rejection_when_the_reader_has_expressed_both(self):
+        """The half of this the first BETA got wrong, and the state the two
+        vectors exist for.
+
+        A card the reader's taste matches strongly and their rejection also
+        touches has to stay well above an unremarkable fresh story, or the card
+        can never be seen and the reason it carries is written for nobody. With
+        both cosines at the strongest observed on the live window, it does.
+        """
+        both_sides = score(0.155, age_hours=0, penalty=0.155)
+        fresh_and_plain = score(0.0, age_hours=0)
+
+        assert both_sides > fresh_and_plain
+
+    def test_with_nothing_liked_yet_a_strong_resemblance_still_goes_to_the_bottom(self):
+        """Stated rather than wished away.
+
+        A reader who has hidden something and liked nothing has an empty
+        positive side, so every candidate scores the recency floor and the worst
+        penalty, 0.031, is larger than that floor of 0.025. Those cards go under
+        everything. That is the correct reading of the only preference this
+        reader has expressed, and it is also why the explanation shows up for
+        readers who have answered in both directions rather than for this one.
+        """
+        assert score(0.0, age_hours=0, penalty=0.155) < 0
+        assert score(0.0, age_hours=0, penalty=0.155) < score(
+            0.0, age_hours=4 * HALF_LIFE_HOURS
+        )
+
+    def test_the_penalty_does_not_decay_away(self):
+        """The penalty sits outside the decay on purpose.
+
+        Inside it, a rejected subject would be forgiven for getting old, and two
+        days later the feed would drift back to exactly what the reader asked it
+        to drop. Here the older of two equally unwanted stories still ranks
+        lower, because only the part worth keeping shrinks with age.
+        """
+        fresh = score(0.10, age_hours=0, penalty=0.12)
+        stale = score(0.10, age_hours=48, penalty=0.12)
+
+        assert stale < fresh
+
+    def test_a_strong_match_survives_a_resemblance_to_something_hidden(self):
+        """Both vectors can have an opinion about one card, and the stronger one
+        should win rather than the negative one deciding by itself.
+        """
+        assert score(0.15, age_hours=0, penalty=0.12) > score(0.0, age_hours=0)
 
 
 class TestAgeInHours:

@@ -162,6 +162,87 @@ class TestPositiveVectors:
         assert "hide" not in params
 
 
+class TestNegativeVectors:
+    def test_reads_only_what_the_reader_hid(self, monkeypatch):
+        env = patched(monkeypatch, FakeEnv())
+
+        asyncio.run(profile.negative_vectors(env, "u1"))
+
+        _, params = env.calls[0]
+        assert "hide" in params
+        assert "like" not in params
+        assert "share" not in params
+
+    def test_builds_a_vector_the_same_way_the_positive_side_does(self, monkeypatch):
+        """Both directions have to be described in one vocabulary.
+
+        The two cosines are compared against each other in the formula, so a
+        hide read through a different join than a like would put the two sides
+        on different rulers and make BETA meaningless.
+        """
+        env = patched(
+            monkeypatch,
+            FakeEnv(
+                {
+                    "FROM interactions i": [
+                        {"cluster_id": 7, "type": "hide", "term": "futebol", "tf": 0.7},
+                        {"cluster_id": 7, "type": "hide", "term": "escalação", "tf": 0.3},
+                    ]
+                }
+            ),
+        )
+
+        vectors = asyncio.run(profile.negative_vectors(env, "u1"))
+
+        assert vectors == [({"futebol": 0.7, "escalação": 0.3}, 1.0)]
+
+
+class TestLoad:
+    def test_a_visitor_with_no_row_yet_has_neither_vector(self, monkeypatch):
+        env = patched(monkeypatch, FakeEnv())
+
+        assert asyncio.run(profile.load(env, "u1")) == ({}, {})
+
+    def test_reads_both_columns_of_one_row(self, monkeypatch):
+        env = patched(
+            monkeypatch,
+            FakeEnv(
+                {
+                    "FROM user_profile": [
+                        {
+                            "term_vector": '{"selic": 1.0}',
+                            "neg_term_vector": '{"futebol": 1.0}',
+                        }
+                    ]
+                }
+            ),
+        )
+
+        assert asyncio.run(profile.load(env, "u1")) == ({"selic": 1.0}, {"futebol": 1.0})
+        assert len(env.calls) == 1
+
+    def test_a_column_that_is_not_readable_json_does_not_take_the_feed_down(
+        self, monkeypatch
+    ):
+        """One unreadable column must not cost the other one.
+
+        The stored vectors are a cache of the log, so the honest recovery is an
+        empty profile rather than an error: the next interaction rebuilds both.
+        """
+        env = patched(
+            monkeypatch,
+            FakeEnv(
+                {
+                    "FROM user_profile": [
+                        {"term_vector": "{nao e json", "neg_term_vector": '{"futebol": 1.0}'}
+                    ]
+                }
+            ),
+        )
+
+        assert asyncio.run(profile.load(env, "u1")) == ({}, {"futebol": 1.0})
+
+
 class TestRank:
     def rows(self):
         return [
@@ -239,6 +320,76 @@ class TestRank:
         ranked = feed.rank(rows, {}, 0.0, set(), NOW)
 
         assert ranked[0]["about"] == []
+
+    def test_a_reader_who_hid_nothing_gets_the_same_order_as_before(self):
+        """The negative side is absent for almost every visitor, and absent has
+        to mean untouched rather than handled.
+        """
+        without = feed.rank(self.rows(), {1: {"selic": 0.5}}, 1.0, set(), NOW)
+        with_empty = feed.rank(self.rows(), {1: {"selic": 0.5}}, 1.0, set(), NOW, {}, 0.0)
+
+        assert [c["cluster_id"] for c in without] == [c["cluster_id"] for c in with_empty]
+        assert all(card["against"] == [] for card in without)
+
+    def test_looking_like_something_hidden_costs_a_card_its_place(self):
+        """Cluster 2 is the fresher of the two and would lead on the floor alone.
+
+        It resembles what the reader hid, so it goes under the one that does
+        not. This is the half of slice 3 that a reader can actually feel: the
+        hide reaches past the single card it was aimed at.
+        """
+        ranked = feed.rank(
+            self.rows(), {}, 0.0, set(), NOW, {2: {"futebol": 0.5}}, 1.0
+        )
+
+        assert [card["cluster_id"] for card in ranked] == [1, 2]
+
+    def test_a_faint_overlap_neither_costs_nor_is_named(self):
+        """The floor, seen from the feed.
+
+        A candidate sharing a little vocabulary with something hidden keeps its
+        place and says nothing about it. Naming a reason the ranking declined to
+        act on would put a sentence on the card that the number underneath does
+        not support.
+        """
+        ranked = feed.rank(
+            self.rows(), {}, 0.0, set(), NOW, {2: {"experiência": 0.04}}, 1.0
+        )
+        card = next(c for c in ranked if c["cluster_id"] == 2)
+
+        assert card["penalty"] == 0
+        assert card["against"] == []
+
+    def test_the_card_names_what_pushed_it_down(self):
+        ranked = feed.rank(
+            self.rows(),
+            {1: {"selic": 0.4}},
+            1.0,
+            set(),
+            NOW,
+            {1: {"futebol": 0.2, "escalação": 0.9}},
+            1.0,
+        )
+        card = next(c for c in ranked if c["cluster_id"] == 1)
+
+        assert card["because"] == ["selic"]
+        assert card["against"] == ["escalação", "futebol"]
+
+    def test_both_directions_can_appear_on_one_card(self):
+        """The tug of war the separate vectors exist to represent.
+
+        A card can be lifted by one subject and pulled down by another at the
+        same time, and the screen is supposed to say both rather than net them
+        into a single number the reader cannot take apart.
+        """
+        ranked = feed.rank(
+            self.rows(), {1: {"selic": 0.4}}, 1.0, set(), NOW, {1: {"futebol": 0.2}}, 1.0
+        )
+        card = next(c for c in ranked if c["cluster_id"] == 1)
+
+        assert card["because"] and card["against"]
+        assert card["similarity"] > 0
+        assert card["penalty"] > 0
 
 
 class TestContributions:

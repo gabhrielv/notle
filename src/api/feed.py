@@ -20,7 +20,7 @@ import json
 
 from api import profile
 from api.db import query
-from ranking.score import age_in_hours, score, similarity
+from ranking.score import age_in_hours, rejection, score, similarity
 from ranking.vectors import norm, strongest
 
 # How many profile terms reach the query. Twenty covers the shape of a taste
@@ -83,7 +83,9 @@ async def candidates(env) -> list[dict]:
     )
 
 
-def rank(rows, matched, profile_norm, answered, now) -> list[dict]:
+def rank(
+    rows, matched, profile_norm, answered, now, avoided=None, avoided_norm=0.0
+) -> list[dict]:
     """Scores every candidate and returns a page of them, best first.
 
     A cluster the reader already answered for is dropped rather than scored,
@@ -91,24 +93,45 @@ def rank(rows, matched, profile_norm, answered, now) -> list[dict]:
     matters for a less obvious reason: the profile was built from that cluster's
     own terms, so it matches itself better than anything else can and would sit
     at the top of every feed from then on.
+
+    Every card leaves with both sides of its position named: `because` holds the
+    profile terms that lifted it, `against` the hidden ones that pushed it down.
+    Both fall out of the same aggregation that produced the number, so what the
+    screen says is the arithmetic itself rather than a story told about it
+    afterwards.
     """
+    avoided = avoided or {}
     ranked = []
+
     for row in rows:
         cluster_id = row["cluster_id"]
         if cluster_id in answered:
             continue
 
         terms = matched.get(cluster_id, {})
+        against = avoided.get(cluster_id, {})
+
         affinity = similarity(sum(terms.values()), profile_norm, row["norm"])
+        penalty = rejection(similarity(sum(against.values()), avoided_norm, row["norm"]))
         age = age_in_hours(row["published_at"], now)
+
+        # A resemblance the ranking refused to act on is one the card must not
+        # claim either, or the screen would name a reason worth nothing.
+        blamed = (
+            [term for term, _ in sorted(against.items(), key=_by_weight)][:REASONS]
+            if penalty
+            else []
+        )
 
         ranked.append(
             {
                 "cluster_id": cluster_id,
-                "score": score(affinity, age),
+                "score": score(affinity, age, penalty),
                 "similarity": affinity,
+                "penalty": penalty,
                 "age_hours": age,
                 "because": [term for term, _ in sorted(terms.items(), key=_by_weight)][:REASONS],
+                "against": blamed,
                 "about": _parse_terms(row["top_terms"]),
             }
         )
@@ -191,16 +214,32 @@ async def decorate(env, ranked: list[dict]) -> list[dict]:
     return cards
 
 
-async def build(env, profile_vector, answered, now) -> list[dict]:
-    """One reader's feed, from stored profile to finished cards.
+async def build(env, profile_vector, negative_vector, answered, now) -> list[dict]:
+    """One reader's feed, from stored profiles to finished cards.
 
-    An empty profile skips the index query entirely: there are no terms to send,
-    every affinity is zero, and what survives in the formula is the recency
-    floor. That is the path most visitors take, and it costs one query less than
-    the personalized one rather than one more.
+    An empty vector skips its index query entirely: there are no terms to send,
+    the cosine is zero either way, and what survives in the formula is the
+    recency floor. Both sides are guarded that way, and the two guards matter at
+    different times. The positive one is the path most visitors take, since
+    everyone arrives having liked nothing. The negative one is the path almost
+    everyone stays on, because hiding is the rarer gesture, so the second query
+    is one a typical request never issues.
     """
-    weighted = await profile.weighted(env, profile_vector, await corpus_size(env))
-    matched = await contributions(env, weighted) if weighted else {}
+    total_docs = await corpus_size(env)
 
-    ranked = rank(await candidates(env), matched, norm(weighted), answered, now)
+    weighted = await profile.weighted(env, profile_vector, total_docs)
+    avoided = await profile.weighted(env, negative_vector, total_docs)
+
+    matched = await contributions(env, weighted) if weighted else {}
+    against = await contributions(env, avoided) if avoided else {}
+
+    ranked = rank(
+        await candidates(env),
+        matched,
+        norm(weighted),
+        answered,
+        now,
+        against,
+        norm(avoided),
+    )
     return await decorate(env, ranked)

@@ -243,6 +243,35 @@ Fica muito abaixo dos 0.25 a 0.67 que duas matérias sobre o mesmo fato marcam e
 
 `W_RECENCIA = 0.025` põe a barra logo abaixo do p90, então um candidato no décimo superior de afinidade vale doze horas de idade e o resto é ordenado por frescor. **O primeiro valor tentado foi 0.10**, escolhido por analogia com os cossenos entre artigos, e ele estava acima do p99: nada que o leitor curtiu conseguia superar uma matéria nova sobre coisa nenhuma. O perfil virava decoração e o feed, um relógio. A constante continua provisória e continua sendo trabalho da fatia 8, mas agora é medida com significado declarado em vez de número escolhido no olho.
 
+### O peso do vetor negativo, e o piso que ele precisou
+
+O `hide` entra como `- BETA * cos(perfil_negativo, item)`, fora do decay. Fora, e não dentro, porque dentro dele uma matéria rejeitada seria perdoada por envelhecer, e dois dias depois o feed voltaria justamente ao assunto que o leitor mandou sair.
+
+**O primeiro valor tentado foi `BETA = 1.0`**, pela simetria com `W_GOSTO`: os dois lados são cossenos medidos do mesmo jeito, e `like` e `hide` pesam igual no log. O argumento estava certo sobre os dois cossenos e errado sobre o score de onde um deles é subtraído. Uma matéria intocada deste momento marca `W_RECENCIA`, que é 0.025, então uma penalidade de 0.005 por partilhar a palavra `experiência` já punha o card abaixo de tudo que era fresco.
+
+Medido escondendo um cluster só, "Diego Souza é anunciado como novo técnico do Joinville", contra a janela ao vivo de 1576 candidatos: ele alcançou **294 deles**, e a ordenação desses 294 não era uma ordenação de futebol.
+
+| cosseno | matéria | o que casou |
+|---|---|---|
+| 0.139 | Pentacampeão passa por cateterismo | o assunto |
+| 0.122 | Corinthians: Diniz denunciado no STJD | o assunto |
+| 0.119 | Vasco x Fluminense | o assunto |
+| | *piso* | |
+| 0.080 | IFMG abre vagas para cursos técnicos | `técnico` |
+| 0.063 | Endrick no Real Madrid | o assunto |
+| 0.056 | C6 condenado, aposentado lesado | `aposentar` |
+| 0.055 | Xuxa anuncia terceiro show | `experiência` |
+
+O que fica logo abaixo de 0.10 é **polissemia**, a fraqueza permanente de um saco de lemas: `técnico` é treinador e é curso técnico, `aposentar` é sair do futebol e é puxar aposentadoria. Um modelo sem sintaxe não separa os dois, então a saída honesta é recusar evidência tão fina em vez de fingir que o número diz o que não diz. Daí `NEGATIVE_FLOOR = 0.10`, que deixa passar 3 dos 1576. Cobertura real de um mesmo fato marca 0.25 a 0.67, bem acima disso, então nada que o leitor reconheceria como o assunto escondido é barrado.
+
+E `BETA = 0.2`, com a mesma leitura verificável que `W_RECENCIA` tem:
+
+> **`BETA` fixa quanto custa a semelhança mais forte possível, e em 0.2 isso é cerca de uma meia-vida de frescor.**
+
+**Achado que fica registrado porque contradiz o desenho:** mesmo assim a frase "menos relevante porque você escondeu" quase nunca chega à tela. A pior penalidade custa 0.031, e o intervalo inteiro de score dentro de uma página de 24 cards é menor que isso (0.045 no primeiro, 0.031 no sexto, medidos na janela ao vivo). Num acervo de 1576 candidatos ordenado por recência, **qualquer card que passe do piso negativo cai para fora da página, e lá não tem onde se explicar**. A direção positiva aparece em 24 de 24 cards; a negativa só aparece quando o leitor curtiu e escondeu coisas que se cruzam na mesma matéria.
+
+Ou seja, a explicação negativa está correta e é estruturalmente rara. Torná-la visível não é questão de calibrar `BETA`: uma penalidade pequena o bastante para o card ficar na página é pequena demais para significar alguma coisa. Se o diferencial precisa ser visto, ele pede uma superfície própria, do tipo "o que seu hide está afastando", e isso é desenho novo, não ajuste de constante.
+
 O produto escalar acontece **no banco**, não em Python. Com os vetores serializados num campo JSON, montar um feed exigiria trazer milhares de blobs pra memória do processo e parsear todos, o que é da ordem de centenas de milissegundos e alguns megabytes por request, num ambiente serverless onde tempo de execução é o que se paga, e que cresce linearmente até quebrar.
 
 Com `article_terms` indexada por `term`, a consulta manda os termos mais fortes do perfil e o banco toca só os artigos que compartilham algum deles. O trabalho passa a ser proporcional à sobreposição e não ao acervo. É indexação invertida clássica.

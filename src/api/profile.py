@@ -20,14 +20,27 @@ from ranking.vectors import weigh
 
 # What each explicit signal is worth. Slice 1 only records two of them; the rest
 # of the funnel arrives later and lands in the same table.
-WEIGHTS = {"like": 1.0, "save": 1.2, "share": 1.5}
+POSITIVE_WEIGHTS = {"like": 1.0, "save": 1.2, "share": 1.5}
 
-POSITIVE = tuple(WEIGHTS)
+# Hiding is kept apart rather than entered as a negative number in the same
+# vector, and the reason is arithmetic. With one signed vector the decay
+# multiplies the whole thing, so two unwanted stories at cosine -0.5 come out at
+# -0.485 after an hour and -0.063 after three days: the ranking prefers the
+# older of two things the reader rejected. Worse, a story about something wholly
+# unknown sits at exactly zero and floats above both. Two vectors keep every
+# cosine in [0, 1], the decay only ever multiplies something positive, and the
+# inversion disappears.
+NEGATIVE_WEIGHTS = {"hide": 1.0}
+
+WEIGHTS = {**POSITIVE_WEIGHTS, **NEGATIVE_WEIGHTS}
+
+POSITIVE = tuple(POSITIVE_WEIGHTS)
+NEGATIVE = tuple(NEGATIVE_WEIGHTS)
 
 # Signals the reader chose to send. Implicit ones (impression, dwell, the time
 # spent away) arrive in a later slice and are deliberately not in this tuple:
 # they adjust, they do not decide.
-EXPLICIT = (*POSITIVE, "hide")
+EXPLICIT = (*POSITIVE, *NEGATIVE)
 
 
 def combine(vectors: list[tuple[dict[str, float], float]]) -> dict[str, float]:
@@ -51,15 +64,22 @@ def combine(vectors: list[tuple[dict[str, float], float]]) -> dict[str, float]:
     return combined
 
 
-async def positive_vectors(env, user_id: str) -> list[tuple[dict[str, float], float]]:
-    """The anchor terms of every cluster this reader kept, with the signal weight.
+async def signal_vectors(
+    env, user_id: str, kinds: tuple[str, ...], weights: dict[str, float]
+) -> list[tuple[dict[str, float], float]]:
+    """The anchor terms of every cluster this reader answered one way, weighted.
 
     One query rather than one per interaction. The join reaches the cluster's
     anchor, which is the same article the clustering matched against and the
     same one `feed_candidates` was measured from, so a profile and a candidate
     are always described in the same vocabulary.
+
+    Both directions read the same table through this one function. That is what
+    the architecture means by interactions being events rather than flags: a
+    like and a hide are the same row shape, and which vector they land in is a
+    question asked at read time.
     """
-    placeholders = ", ".join("?" * len(POSITIVE))
+    placeholders = ", ".join("?" * len(kinds))
     rows = await query(
         env,
         "SELECT i.cluster_id, i.type, t.term, t.tf "
@@ -67,30 +87,31 @@ async def positive_vectors(env, user_id: str) -> list[tuple[dict[str, float], fl
         "JOIN clusters c ON c.id = i.cluster_id "
         "JOIN article_terms t ON t.article_id = c.representative_article_id "
         f"WHERE i.user_id = ? AND i.type IN ({placeholders})",
-        [user_id, *POSITIVE],
+        [user_id, *kinds],
     )
 
     grouped: dict[int, tuple[dict[str, float], float]] = {}
     for row in rows:
-        vector, _ = grouped.setdefault(row["cluster_id"], ({}, WEIGHTS[row["type"]]))
+        vector, _ = grouped.setdefault(row["cluster_id"], ({}, weights[row["type"]]))
         vector[row["term"]] = row["tf"]
 
     return list(grouped.values())
 
 
-async def hidden_clusters(env, user_id: str) -> set[int]:
-    """Clusters this reader asked not to see again.
+async def positive_vectors(env, user_id: str) -> list[tuple[dict[str, float], float]]:
+    """Clusters the reader kept."""
+    return await signal_vectors(env, user_id, POSITIVE, POSITIVE_WEIGHTS)
 
-    Slice 1 treats `hide` as an exclusion and nothing more. Slice 3 reads these
-    same rows again to build a negative vector, which is what lets a card say
-    why it ranked lower instead of simply vanishing.
+
+async def negative_vectors(env, user_id: str) -> list[tuple[dict[str, float], float]]:
+    """Clusters the reader hid.
+
+    Slice 1 treated a hide as an exclusion and nothing more, so the reader's
+    strongest statement about what they do not want shaped exactly one card.
+    Read as a vector it reaches everything that resembles it, which is what
+    lets a card say why it ranked lower instead of a subject simply vanishing.
     """
-    rows = await query(
-        env,
-        "SELECT DISTINCT cluster_id FROM interactions WHERE user_id = ? AND type = 'hide'",
-        [user_id],
-    )
-    return {row["cluster_id"] for row in rows if row["cluster_id"] is not None}
+    return await signal_vectors(env, user_id, NEGATIVE, NEGATIVE_WEIGHTS)
 
 
 async def acted_on(env, user_id: str) -> set[int]:
@@ -117,44 +138,62 @@ async def acted_on(env, user_id: str) -> set[int]:
     return {row["cluster_id"] for row in rows if row["cluster_id"] is not None}
 
 
-async def rebuild(env, user_id: str) -> dict[str, float]:
-    """Recomputes the stored vector from the log and writes it back."""
-    vector = combine(await positive_vectors(env, user_id))
+async def rebuild(env, user_id: str) -> tuple[dict[str, float], dict[str, float]]:
+    """Recomputes both stored vectors from the log and writes them back.
+
+    Both, on every signal, even though one interaction can only have moved one
+    of them. Rewriting the pair costs a second read of a table the reader has a
+    handful of rows in, and it keeps the invariant that matters: what is stored
+    is a pure function of the log at one moment, rather than two caches that
+    were last correct at different times.
+    """
+    positive = combine(await positive_vectors(env, user_id))
+    negative = combine(await negative_vectors(env, user_id))
 
     await execute(
         env,
-        "UPDATE user_profile SET term_vector = ?, updated_at = ? WHERE user_id = ?",
+        "UPDATE user_profile SET term_vector = ?, neg_term_vector = ?, updated_at = ? "
+        "WHERE user_id = ?",
         [
-            json.dumps(vector, ensure_ascii=False),
+            json.dumps(positive, ensure_ascii=False),
+            json.dumps(negative, ensure_ascii=False),
             datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
             user_id,
         ],
     )
-    return vector
+    return positive, negative
 
 
-async def load(env, user_id: str) -> dict[str, float]:
-    """Reads the cached vector. Raw frequencies, never weighted.
-
-    Storing it already weighted would freeze an IDF that moves on every
-    ingestion run, which is the same mistake the corpus avoids by keeping raw TF
-    in `article_terms`. The weighing happens per request, against the corpus
-    that exists then.
-    """
-    rows = await query(
-        env,
-        "SELECT term_vector FROM user_profile WHERE user_id = ?",
-        [user_id],
-    )
-    if not rows:
-        return {}
-
+def _decode(raw) -> dict[str, float]:
+    """A stored vector, or an empty one if the column is not readable JSON."""
     try:
-        stored = json.loads(rows[0]["term_vector"] or "{}")
+        stored = json.loads(raw or "{}")
     except ValueError:
         return {}
 
     return stored if isinstance(stored, dict) else {}
+
+
+async def load(env, user_id: str) -> tuple[dict[str, float], dict[str, float]]:
+    """Reads both cached vectors. Raw frequencies, never weighted.
+
+    Storing them already weighted would freeze an IDF that moves on every
+    ingestion run, which is the same mistake the corpus avoids by keeping raw TF
+    in `article_terms`. The weighing happens per request, against the corpus
+    that exists then.
+
+    One query for the pair, because they are two columns of one row and the feed
+    needs both before it can rank anything.
+    """
+    rows = await query(
+        env,
+        "SELECT term_vector, neg_term_vector FROM user_profile WHERE user_id = ?",
+        [user_id],
+    )
+    if not rows:
+        return {}, {}
+
+    return _decode(rows[0]["term_vector"]), _decode(rows[0]["neg_term_vector"])
 
 
 async def weighted(env, vector: dict[str, float], total_docs: int) -> dict[str, float]:

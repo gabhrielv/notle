@@ -368,6 +368,17 @@ def store(client: D1Client, plan: IngestionPlan, now: datetime) -> None:
     ]
     client.insert_many("article_terms", ("article_id", "term", "tf"), term_rows)
 
+    # The search index gets the text as the portal wrote it, not the lemmas.
+    # Someone typing into a search box is not writing lemmas, and FTS5 folds the
+    # diacritics on both sides, so `eleicao` finds `eleição` without the query
+    # ever having to pass through a model the Worker cannot load.
+    search_rows = [
+        (ids[a.draft.url], a.draft.title, a.draft.summary)
+        for a in plan.articles
+        if a.draft.url in ids
+    ]
+    client.insert_many("article_search", ("rowid", "title", "summary"), search_rows)
+
     _bump_document_counts(client, plan.document_counts)
 
     client.query(

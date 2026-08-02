@@ -13,17 +13,39 @@ a framework would have done fits in the function below.
 
 import json
 from datetime import UTC, datetime
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from workers import Response
 
-from api import feed, profile, users
+from api import browse, feed, profile, users
 from api.db import execute, query_one
 
-# What a reader is allowed to record. `hide` is an exclusion in this slice and a
-# negative vector in a later one, but either way it is the same event in the
-# same table.
+# What a reader is allowed to record. A hide both excludes its own cluster and
+# feeds the negative vector, but either way it is the same event in the same
+# table.
 RECORDABLE = frozenset({"like", "hide"})
+
+# Personalized, so it must never be held by a cache between reader and Worker.
+PRIVATE = {"Cache-Control": "private, no-store"}
+
+
+def _params(request) -> dict[str, list[str]]:
+    return parse_qs(urlparse(request.url).query)
+
+
+def _one(params: dict, name: str, fallback: str = "") -> str:
+    return params.get(name, [fallback])[0]
+
+
+def _offset(params: dict) -> int:
+    """Where the reader has scrolled to.
+
+    Anything that is not a whole number is read as the start rather than
+    refused. The offset comes from a scroll position, and a malformed one is a
+    bug in the caller, not something the reader can act on.
+    """
+    raw = _one(params, "offset", "0")
+    return int(raw) if raw.isdigit() else 0
 
 
 async def health(request, env):
@@ -39,17 +61,16 @@ async def read_feed(request, env):
     to ask for the second, and a cascade of round trips on the one screen that
     decides whether a visitor stays.
     """
+    params = _params(request)
+    offset = _offset(params)
+
     user, is_new = await users.identify(env, request.headers.get("Cookie"))
 
     stored, avoided = await profile.load(env, user["id"])
     answered = await profile.acted_on(env, user["id"])
-    cards, held_back = await feed.build(env, stored, avoided, answered, datetime.now(UTC))
+    cards = await feed.build(env, stored, avoided, answered, datetime.now(UTC), offset)
 
-    headers = {
-        # Personalized, so it must never be held by a cache between the reader
-        # and the Worker.
-        "Cache-Control": "private, no-store",
-    }
+    headers = dict(PRIVATE)
     if is_new:
         headers["Set-Cookie"] = users.set_cookie(user["id"])
 
@@ -62,12 +83,66 @@ async def read_feed(request, env):
                 "hidden_terms": len(avoided),
             },
             "feed": cards,
-            # What the reader's own hide moved. Kept out of `feed` because these
-            # are not stories the ranking chose to show; they are an account of
-            # what it chose not to.
-            "held_back": held_back,
+            # Absent rather than false when the page came back short: the client
+            # stops asking, which is what ends an endless scroll.
+            "next_offset": offset + len(cards) if len(cards) >= feed.PAGE else None,
         },
         headers=headers,
+    )
+
+
+async def read_latest(request, env):
+    """Everything the corpus holds, newest first, with no ranking at all.
+
+    Hidden clusters are left out by default and returned when asked for, because
+    a hide is an instruction about the feed and this page is the place to check
+    what that instruction is costing.
+    """
+    params = _params(request)
+    offset = _offset(params)
+    show_hidden = _one(params, "hidden") == "1"
+
+    user, is_new = await users.identify(env, request.headers.get("Cookie"))
+    hidden = set() if show_hidden else await profile.hidden(env, user["id"])
+
+    cards = await browse.latest(env, offset, hidden)
+
+    headers = dict(PRIVATE)
+    if is_new:
+        headers["Set-Cookie"] = users.set_cookie(user["id"])
+
+    return Response.json(
+        {
+            "feed": cards,
+            "hidden_shown": show_hidden,
+            "hidden_count": len(hidden) if not show_hidden else 0,
+            "next_offset": offset + len(cards) if len(cards) >= browse.PAGE else None,
+        },
+        headers=headers,
+    )
+
+
+async def read_search(request, env):
+    """Stories matching what was typed.
+
+    Nothing here reads or writes a profile, in either mode. The anonymous switch
+    is a promise the client keeps by not offering the buttons that record, and
+    this endpoint is the same either way, so the promise is one the server cannot
+    break by accident.
+    """
+    params = _params(request)
+    offset = _offset(params)
+    typed = _one(params, "q").strip()
+
+    cards = await browse.search(env, typed, offset) if typed else []
+
+    return Response.json(
+        {
+            "query": typed,
+            "feed": cards,
+            "next_offset": offset + len(cards) if len(cards) >= browse.PAGE else None,
+        },
+        headers=PRIVATE,
     )
 
 
@@ -110,7 +185,7 @@ async def record(request, env):
 
     vector, avoided = await profile.rebuild(env, user["id"])
 
-    headers = {"Cache-Control": "private, no-store"}
+    headers = dict(PRIVATE)
     if is_new:
         headers["Set-Cookie"] = users.set_cookie(user["id"])
 
@@ -123,6 +198,8 @@ async def record(request, env):
 ROUTES = {
     ("GET", "/api/health"): health,
     ("GET", "/api/feed"): read_feed,
+    ("GET", "/api/latest"): read_latest,
+    ("GET", "/api/search"): read_search,
     ("POST", "/api/interactions"): record,
 }
 

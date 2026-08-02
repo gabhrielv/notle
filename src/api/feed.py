@@ -36,18 +36,6 @@ PAGE = 24
 # being a reason and starts being a dump.
 REASONS = 3
 
-# How many demoted stories the feed owns up to.
-#
-# A hide does two things: it removes the cluster it was aimed at, and it pushes
-# down everything that resembles it. The reader can see the first and never the
-# second, because the penalty is larger than the whole spread of scores inside a
-# page, so anything it touches lands well outside PAGE. The explanation the card
-# carries is then written for nobody.
-#
-# These come back separately so the screen can say what was moved. A handful is
-# the point: this is an account of what the reader's own gesture did, not a
-# second feed of things they asked not to see.
-HELD_BACK = 5
 
 
 async def corpus_size(env) -> int:
@@ -115,22 +103,17 @@ async def candidates(env) -> list[dict]:
 
 
 def rank(
-    rows, matched, profile_norm, answered, now, avoided=None, avoided_norm=0.0
+    rows, matched, profile_norm, answered, now, avoided=None, avoided_norm=0.0, offset=0
 ) -> list[dict]:
-    """The page: the best of what `scored` produced."""
-    return scored(rows, matched, profile_norm, answered, now, avoided, avoided_norm)[:PAGE]
+    """One page of what `scored` produced.
 
-
-def held_back(everything: list[dict]) -> list[dict]:
-    """Stories a hide pushed off the page, worst hit first.
-
-    Read from beyond the page rather than from within it, because that is where
-    the penalty puts them. A card that was penalised and placed anyway needs no
-    account of itself: it is on screen carrying its own reason.
+    Paging by offset rather than by a cursor on the score, and that is safe here
+    for a reason particular to this corpus: the ranking only moves when the
+    ingestion runs, once an hour. Between two runs the order is fixed, so page
+    two is the same list page one came from, further down.
     """
-    beyond = [card for card in everything[PAGE:] if card["penalty"] > 0]
-    beyond.sort(key=lambda card: -card["penalty"])
-    return beyond[:HELD_BACK]
+    everything = scored(rows, matched, profile_norm, answered, now, avoided, avoided_norm)
+    return everything[offset : offset + PAGE]
 
 
 def scored(
@@ -216,12 +199,18 @@ async def decorate(env, ranked: list[dict]) -> list[dict]:
     ids = [card["cluster_id"] for card in ranked]
     placeholders = ", ".join("?" * len(ids))
 
+    # The left join is what lets the chronological and search lists share this
+    # function. Their clusters carry no score and no reason, but the terms the
+    # ingestion already wrote are worth showing, and a cluster older than the
+    # ranking window simply has no row there and no kicker.
     anchors = await query(
         env,
-        "SELECT c.id AS cluster_id, c.size, a.title, a.url, a.published_at, s.name AS source "
+        "SELECT c.id AS cluster_id, c.size, a.title, a.url, a.published_at, "
+        "s.name AS source, f.top_terms AS top_terms "
         "FROM clusters c "
         "JOIN articles a ON a.id = c.representative_article_id "
         "JOIN sources s ON s.id = a.source_id "
+        "LEFT JOIN feed_candidates f ON f.cluster_id = c.id "
         f"WHERE c.id IN ({placeholders})",
         ids,
     )
@@ -251,6 +240,9 @@ async def decorate(env, ranked: list[dict]) -> list[dict]:
         others = sorted(name for name in covering if name != anchor["source"])
         cards.append(
             {
+                "because": [],
+                "against": [],
+                "about": _parse_terms(anchor["top_terms"]),
                 **card,
                 "title": anchor["title"],
                 "url": anchor["url"],
@@ -265,9 +257,9 @@ async def decorate(env, ranked: list[dict]) -> list[dict]:
 
 
 async def build(
-    env, profile_vector, negative_vector, answered, now
-) -> tuple[list[dict], list[dict]]:
-    """One reader's feed and the stories their own hide pushed out of it.
+    env, profile_vector, negative_vector, answered, now, offset=0
+) -> list[dict]:
+    """One page of one reader's feed, from stored profiles to finished cards.
 
     An empty vector skips its index query entirely: there are no terms to send,
     the cosine is zero either way, and what survives in the formula is the
@@ -285,7 +277,7 @@ async def build(
     matched = await contributions(env, weighted, kept_idf) if weighted else {}
     against = await contributions(env, avoided, avoided_idf) if avoided else {}
 
-    everything = scored(
+    page = rank(
         await candidates(env),
         matched,
         norm(weighted),
@@ -293,18 +285,7 @@ async def build(
         now,
         against,
         norm(avoided),
+        offset,
     )
 
-    page = everything[:PAGE]
-    demoted = held_back(everything)
-
-    # One trip to the database for both lists. Splitting them afterwards costs a
-    # set membership test; decorating them separately would cost two more
-    # queries on the one screen that decides whether a visitor stays.
-    cards = await decorate(env, page + demoted)
-    demoted_ids = {card["cluster_id"] for card in demoted}
-
-    return (
-        [card for card in cards if card["cluster_id"] not in demoted_ids],
-        [card for card in cards if card["cluster_id"] in demoted_ids],
-    )
+    return await decorate(env, page)

@@ -114,6 +114,25 @@ async def negative_vectors(env, user_id: str) -> list[tuple[dict[str, float], fl
     return await signal_vectors(env, user_id, NEGATIVE, NEGATIVE_WEIGHTS)
 
 
+async def hidden(env, user_id: str) -> set[int]:
+    """Only the clusters the reader asked not to see.
+
+    The chronological list needs this half on its own, where the feed needs
+    `acted_on`. A liked cluster is left out of the feed because a profile built
+    from its terms recognises itself and pins it to the top forever, which is an
+    argument about ranking. Nothing ranks here, so a story stays in the timeline
+    on the strength of having been liked.
+    """
+    placeholders = ", ".join("?" * len(NEGATIVE))
+    rows = await query(
+        env,
+        "SELECT DISTINCT cluster_id FROM interactions "
+        f"WHERE user_id = ? AND type IN ({placeholders})",
+        [user_id, *NEGATIVE],
+    )
+    return {row["cluster_id"] for row in rows if row["cluster_id"] is not None}
+
+
 async def acted_on(env, user_id: str) -> set[int]:
     """Every cluster this reader has already answered for, either way.
 

@@ -13,7 +13,7 @@ free of them anyway.
 import asyncio
 from datetime import UTC, datetime
 
-from api import feed, profile, users
+from api import browse, feed, profile, users
 
 NOW = datetime(2026, 7, 31, 12, tzinfo=UTC)
 
@@ -39,7 +39,32 @@ def patched(monkeypatch, env):
     """Points the module level `query` at the fake for the duration of a test."""
     monkeypatch.setattr(profile, "query", fake_query)
     monkeypatch.setattr(feed, "query", fake_query)
+    monkeypatch.setattr(browse, "query", fake_query)
     return env
+
+
+class TestMatchExpression:
+    """What a person types, turned into something FTS5 will accept."""
+
+    def test_every_word_has_to_appear(self):
+        """Space is AND in FTS5. Under OR a search for two words would come back
+        full of stories matching only the commoner one, which reads as broken.
+        """
+        assert browse.match_expression("selic copom") == '"selic" "copom"'
+
+    def test_syntax_is_stripped_rather_than_escaped(self):
+        """A search box takes text, not an expression. `Selic?` should find what
+        `Selic` finds, and a stray quote should not become an error the reader
+        has to work out.
+        """
+        assert browse.match_expression('selic? "copom"') == '"selic" "copom"'
+        assert browse.match_expression("NEAR(a b)") == '"NEAR" "a" "b"'
+
+    def test_punctuation_on_its_own_leaves_nothing_to_search_for(self):
+        assert browse.match_expression("?? **") == ""
+
+    def test_nothing_typed(self):
+        assert browse.match_expression("   ") == ""
 
 
 class TestReadCookie:
@@ -299,6 +324,46 @@ class TestRank:
         assert all(card["score"] > 0 for card in ranked)
         assert all(card["because"] == [] for card in ranked)
 
+    def test_scrolling_past_the_first_page_continues_the_same_order(self):
+        """Offset paging is safe here for a reason particular to this corpus: the
+        ranking only moves when the ingestion runs, once an hour, so page two is
+        page one's list further down rather than a fresh ranking.
+        """
+        many = [
+            {
+                "cluster_id": i,
+                "base_score": 1.0,
+                "norm": 1.0,
+                "published_at": "2026-07-31T12:00:00Z",
+                "top_terms": "[]",
+            }
+            for i in range(feed.PAGE * 2 + 5)
+        ]
+
+        first = feed.rank(many, {}, 0.0, set(), NOW)
+        second = feed.rank(many, {}, 0.0, set(), NOW, offset=feed.PAGE)
+        whole = feed.scored(many, {}, 0.0, set(), NOW)
+
+        assert len(second) == feed.PAGE
+        assert not {c["cluster_id"] for c in first} & {c["cluster_id"] for c in second}
+        assert [c["cluster_id"] for c in first + second] == [
+            c["cluster_id"] for c in whole[: feed.PAGE * 2]
+        ]
+
+    def test_the_last_page_comes_back_short_so_the_scroll_can_stop(self):
+        many = [
+            {
+                "cluster_id": i,
+                "base_score": 1.0,
+                "norm": 1.0,
+                "published_at": "2026-07-31T12:00:00Z",
+                "top_terms": "[]",
+            }
+            for i in range(feed.PAGE + 3)
+        ]
+
+        assert len(feed.rank(many, {}, 0.0, set(), NOW, offset=feed.PAGE)) == 3
+
     def test_a_page_is_capped(self):
         many = [
             {
@@ -392,51 +457,84 @@ class TestRank:
         assert card["penalty"] > 0
 
 
-class TestHeldBack:
-    """The account the feed gives of what a hide moved.
+class TestBrowse:
+    """The two lists that ignore taste."""
 
-    A penalty is larger than the whole spread of scores inside a page, so
-    anything it touches lands well outside it. Without this list the reader sees
-    a cluster disappear and never learns that the same gesture pushed others
-    down, which is the half of slice 3 the card could not deliver.
-    """
+    def test_the_timeline_leaves_out_what_the_reader_hid(self, monkeypatch):
+        env = patched(monkeypatch, FakeEnv())
 
-    def card(self, cluster_id, penalty=0.0):
-        return {"cluster_id": cluster_id, "penalty": penalty}
+        asyncio.run(browse.latest(env, offset=0, hidden={7, 9}))
 
-    def test_a_reader_who_hid_nothing_is_told_nothing(self):
-        everything = [self.card(i) for i in range(feed.PAGE + 20)]
+        sql, params = env.calls[0]
+        assert "NOT IN" in sql
+        assert 7 in params and 9 in params
 
-        assert feed.held_back(everything) == []
+    def test_a_reader_who_hid_nothing_gets_no_exclusion_clause(self, monkeypatch):
+        """An empty set must not become `NOT IN ()`, which is a syntax error."""
+        env = patched(monkeypatch, FakeEnv())
 
-    def test_only_what_the_penalty_pushed_past_the_page_is_counted(self):
-        """A story that is merely far down is not a story that was moved. Only a
-        penalty makes it the reader's own doing, and only that is worth naming.
+        asyncio.run(browse.latest(env, offset=0, hidden=set()))
+
+        sql, _ = env.calls[0]
+        assert "NOT IN" not in sql
+
+    def test_the_exclusion_stays_under_the_bound_parameter_ceiling(self, monkeypatch):
+        """D1 refuses a statement over 100 parameters, and the page needs three.
+
+        Past the cap the tail of the hides stops being filtered, which shows the
+        reader a story they hid. Refusing the request instead would show them
+        nothing at all.
         """
-        everything = [self.card(i) for i in range(feed.PAGE)]
-        everything += [self.card(900, 0.13), self.card(901), self.card(902, 0.11)]
+        env = patched(monkeypatch, FakeEnv())
 
-        assert [c["cluster_id"] for c in feed.held_back(everything)] == [900, 902]
+        asyncio.run(browse.latest(env, offset=0, hidden=set(range(500))))
 
-    def test_a_penalised_card_that_still_made_the_page_is_left_alone(self):
-        """It is on screen carrying its own reason, so repeating it below would
-        be the same explanation twice.
+        _, params = env.calls[0]
+        assert len(params) == browse.MAX_EXCLUSIONS + 2
+        assert len(params) <= 100
+
+    def test_a_cluster_with_no_headline_yet_is_not_offered(self, monkeypatch):
+        """The ingestion opens a cluster before it knows the article id that
+        will represent it, so a row can exist with nothing to show.
         """
-        everything = [self.card(1, 0.14)] + [self.card(i) for i in range(2, feed.PAGE + 5)]
+        env = patched(monkeypatch, FakeEnv())
 
-        assert feed.held_back(everything) == []
+        asyncio.run(browse.latest(env, offset=0, hidden=set()))
 
-    def test_the_worst_hit_come_first(self):
-        everything = [self.card(i) for i in range(feed.PAGE)]
-        everything += [self.card(900, 0.11), self.card(901, 0.15), self.card(902, 0.13)]
+        sql, _ = env.calls[0]
+        assert "representative_article_id IS NOT NULL" in sql
 
-        assert [c["cluster_id"] for c in feed.held_back(everything)] == [901, 902, 900]
+    def test_searching_for_nothing_never_reaches_the_database(self, monkeypatch):
+        env = patched(monkeypatch, FakeEnv())
 
-    def test_it_is_an_account_and_not_a_second_feed(self):
-        everything = [self.card(i) for i in range(feed.PAGE)]
-        everything += [self.card(900 + i, 0.13) for i in range(40)]
+        assert asyncio.run(browse.search(env, "  ", offset=0)) == []
+        assert env.calls == []
 
-        assert len(feed.held_back(everything)) == feed.HELD_BACK
+    def test_search_groups_by_cluster(self, monkeypatch):
+        """Several portals cover one story, so ungrouped results repeat the same
+        headline, which is the repetition clustering exists to remove arriving
+        through a different door.
+        """
+        env = patched(monkeypatch, FakeEnv())
+
+        asyncio.run(browse.search(env, "selic", offset=0))
+
+        sql, params = env.calls[0]
+        assert "GROUP BY cluster_id" in sql
+        assert "AS MATERIALIZED" in sql
+        assert params[0] == '"selic"'
+
+    def test_search_does_not_read_the_profile(self, monkeypatch):
+        """A question with a right answer. Withholding a story the reader asked
+        for by name, because they once hid something like it, would make the box
+        untrustworthy.
+        """
+        env = patched(monkeypatch, FakeEnv())
+
+        asyncio.run(browse.search(env, "selic", offset=0))
+
+        assert all("interactions" not in sql for sql, _ in env.calls)
+        assert all("user_profile" not in sql for sql, _ in env.calls)
 
 
 class TestContributions:

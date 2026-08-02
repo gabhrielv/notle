@@ -12,7 +12,7 @@ from datetime import UTC, datetime, timedelta
 
 import httpx
 
-from ingest import candidates
+from ingest import candidates, onboarding
 from ingest.clustering import assign_cluster
 from ingest.feeds import ArticleDraft, dedupe_by_url, parse_feed
 from ingest.normalize import lemmatize, term_frequencies
@@ -407,7 +407,32 @@ def refresh_candidates(client: D1Client, now: datetime) -> int:
     return len(built)
 
 
-def run(client: D1Client | None = None, now: datetime | None = None) -> tuple[IngestionPlan, int]:
+def refresh_onboarding(client: D1Client, now: datetime) -> int:
+    """Rebuilds the twelve headlines the cold start offers.
+
+    Reads its own shorter window rather than reusing the feed's rows. The
+    onboarding asks what the product is like right now, and a story from the day
+    before yesterday answers that worse than one from this morning however well
+    it scored.
+    """
+    rows = onboarding.read_window(client, now)
+    if not rows:
+        return 0
+
+    total_docs = corpus_size(client)
+    counts = document_counts(client, {row["term"] for row in rows})
+
+    coverage = onboarding.read_coverage(client, now)
+    chosen = onboarding.choose(
+        onboarding.assemble(rows, coverage, counts, total_docs, now)
+    )
+    onboarding.materialize(client, chosen)
+    return len(chosen)
+
+
+def run(
+    client: D1Client | None = None, now: datetime | None = None
+) -> tuple[IngestionPlan, int, int]:
     """One full pass: read the feeds, work out what is new, store it, publish it."""
     client = client or D1Client.from_env()
     now = now or datetime.now(UTC)
@@ -417,14 +442,16 @@ def run(client: D1Client | None = None, now: datetime | None = None) -> tuple[In
     plan = prepare(drafts, known_urls(client, [d.url for d in drafts]))
     store(client, plan, now)
     published = refresh_candidates(client, now)
+    offered = refresh_onboarding(client, now)
 
-    return plan, published
+    return plan, published, offered
 
 
 if __name__ == "__main__":
-    result, published = run()
+    result, published, offered = run()
     print(
         f"{result.total_docs_delta} artigos novos, "
         f"{len(result.document_counts)} termos tocados, "
-        f"{published} clusters no feed"
+        f"{published} clusters no feed, "
+        f"{offered} no onboarding"
     )

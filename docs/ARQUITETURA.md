@@ -378,6 +378,26 @@ O onboarding mostra cerca de 12 clusters variados das últimas 24h e pede que o 
 
 Isso evita duas armadilhas do desenho por categorias. **Categoria de RSS não é confiável entre portais**: G1 separa por editoria em feeds distintos, BBC e CNN marcam de formas próprias, e o resultado é `economia`, `Economia`, `business`, `mercado` e vazio na mesma coluna, sem mapeamento que não seja um dicionário mantido à mão pra sempre. **E lista curada de termos-semente apodrece**: os termos que definem "política" hoje não são os de daqui a três meses, e ninguém lembra de atualizar. Semear a partir de manchetes reais se atualiza sozinho, reusa clusters já construídos, e coloca o visitante olhando pro produto em vez de preenchendo formulário.
 
+### O que "variados" exigiu
+
+A palavra fazia todo o trabalho e escondia o problema. Medindo contra a janela ao vivo de **1332 clusters em 24h**, as 12 mais recentes eram oito itens do G1 e liam como boletim de ocorrência: homem eletrocutado cortando grama, corpo achado em estrada de terra, mulher presa com crack no vaso sanitário, engavetamento na rodovia. Quem vê isso aprende que o produto é sobre acidente no interior de São Paulo.
+
+Recência não separa nada aqui. Tudo que chegou na última hora tem `decay` entre 0.95 e 1.0, então um intervalo de 0.05 decide 12 vagas entre 1332 candidatos, e a penalidade de semelhança só consegue derrubar duplicata quase exata. Três correções, cada uma medida:
+
+**Cobertura, contada em portais distintos.** É a resposta que o próprio corpus dá sobre o que foi notícia do dia: 1223 clusters foram carregados por um portal, 83 por dois, 21 por três, 5 por quatro ou mais. Contar **artigos** em vez de portais quebra: por contagem de artigos o topo da tela vinha "Previsão do tempo hoje para Cabo de Santo Agostinho", com 21 artigos, e "Quina hoje: resultado do concurso 7081", com 10. Nenhum dos dois é notícia; os dois são um portal republicando template por cidade e por sorteio. Por portais distintos ambos valem 1 e somem.
+
+**Teto de 3 por fonte.** O G1 publica 678 dos 1332 clusters da janela, mais que os outros cinco somados, então sem teto ele fica com metade da tela por taxa de publicação. Isso é fato sobre ritmo editorial, não sobre o que mostrar primeiro a alguém.
+
+**Penalidade de semelhança**, que continua fazendo o que sempre fez: tirar a segunda versão do mesmo fato.
+
+O resultado contra a mesma janela cobre política estadual, internacional, economia, cultura, ensaio e celebridade, em cinco portais, sem nenhum template.
+
+### Ressalva registrada
+
+A semente funciona e a explicação que ela produz é fraca. Um perfil montado de 3 artigos carrega 89 termos, e os que mais explicam posição saíram `escolher`, `susto` e `procedimento`, substantivos e verbos genéricos que pegam IDF alto por serem raros sem carregar assunto. Os termos certos estão lá (`pernambuco`, `psd`, `argentina`, `gravidez`), só não são os mais fortes.
+
+A causa não é da semente, é da normalização: `escolher` é da mesma família dos verbos leves que `LIGHT_VERBS` já descarta. Não foi corrigido junto porque mexer no filtro só afeta artigos futuros, já que `article_terms` guarda o que foi gravado, e isso deixaria o corpus medido com duas réguas. É trabalho de uma passada de reprocessamento, não de uma linha.
+
 ## Avaliação e calibragem
 
 A fórmula tem mais de quinze constantes (`w_longo`, `w_sessao_max`, `k_concentracao`, `w_coocor`, `beta`, as duas meias-vidas, `fracao_descoberta`, `limiar_cluster`, tetos e janelas do funil, e o peso de cada evento). Escolhidas por intuição, elas fariam do sistema um tempero, não um algoritmo. "Por que 0,35?" precisa ter resposta.

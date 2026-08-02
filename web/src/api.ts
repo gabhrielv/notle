@@ -42,6 +42,14 @@ export type Page = {
 export type Feed = Page & {
   user: { is_new: boolean; discovery_ratio: number }
   profile: { terms: number; empty: boolean; hidden_terms: number }
+  /**
+   * The cold start, carried by the feed response rather than fetched on its own.
+   *
+   * A visitor who has answered nothing is the one this screen has to be fastest
+   * for, and a second call would put a round trip in front of the only screen
+   * most people will ever see. `feed` is empty once the reader has answered.
+   */
+  onboarding: { pending: boolean; picks: number; feed: Card[] }
 }
 
 export type Latest = Page & {
@@ -79,6 +87,18 @@ export function readSearch(
   signal?: AbortSignal,
 ): Promise<Search> {
   return read(`/api/search?q=${encodeURIComponent(query)}&offset=${offset}`, signal)
+}
+
+/** Records the cold start answer. An empty list is a skip, and still an answer. */
+export async function answerOnboarding(picks: number[]): Promise<void> {
+  const response = await fetch('/api/onboarding', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ picks }),
+  })
+  if (!response.ok) {
+    throw new Error(`onboarding respondeu ${response.status}`)
+  }
 }
 
 export async function record(cluster: number, type: Signal): Promise<void> {

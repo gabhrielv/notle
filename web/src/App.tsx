@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Card } from './Card'
-import { readFeed, readLatest, readSearch, record } from './api'
+import { Onboarding } from './Onboarding'
+import { answerOnboarding, readFeed, readLatest, readSearch, record } from './api'
 import type { Feed, Signal } from './api'
 import { useTheme } from './theme'
 import { useList, useSentinel } from './useList'
@@ -194,18 +195,33 @@ function Stream({ load, listKey, canAct, emptyTitle, emptyBody, children }: Stre
 function FeedView() {
   const [profile, setProfile] = useState<Feed['profile'] | null>(null)
   const [isNew, setIsNew] = useState(false)
+  const [cold, setCold] = useState<Feed['onboarding'] | null>(null)
+  // Bumped when the cold start is answered, so the list reloads against the
+  // profile that answer just created rather than the empty one behind it.
+  const [generation, setGeneration] = useState(0)
 
   const load = useCallback<Loader>(async (offset, signal) => {
     const page = await readFeed(offset, signal)
     setProfile(page.profile)
     setIsNew(page.user.is_new)
+    if (offset === 0) setCold(page.onboarding)
     return page
   }, [])
+
+  const finish = useCallback(async (picks: number[]) => {
+    await answerOnboarding(picks)
+    setCold(null)
+    setGeneration((n) => n + 1)
+  }, [])
+
+  if (cold?.pending && cold.feed.length > 0) {
+    return <Onboarding offer={cold.feed} picks={cold.picks} onDone={finish} />
+  }
 
   return (
     <Stream
       load={load}
-      listKey="feed"
+      listKey={`feed:${generation}`}
       canAct
       emptyTitle="Nada na janela agora"
       emptyBody="A ingestão lê os portais de hora em hora, e o feed olha as últimas 48 horas. Se você respondeu a tudo, volte depois da próxima passada."

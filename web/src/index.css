@@ -279,6 +279,130 @@ body::before {
   color: var(--ink-2);
 }
 
+/* ---------- the cold start ---------- */
+
+.onboard {
+  margin-top: 2.25rem;
+}
+
+.onboard-title {
+  margin: 0;
+  font-family: var(--display);
+  font-size: clamp(2rem, 5.5vw, 3rem);
+  font-weight: 500;
+  line-height: 1.02;
+  letter-spacing: -0.025em;
+  text-wrap: balance;
+}
+
+.onboard-title span {
+  font-style: italic;
+  color: var(--reg);
+}
+
+.onboard-body {
+  margin: 0.9rem 0 0;
+  max-width: 34rem;
+  font-size: 0.9rem;
+  line-height: 1.55;
+  color: var(--ink-2);
+}
+
+.offer {
+  list-style: none;
+  margin: 2rem 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: 1px;
+  background: var(--rule);
+  border: 1px solid var(--rule);
+}
+
+/* A contact sheet rather than a list of checkboxes. The reader is picking
+   headlines, so the headline is the control, and the gap being a hairline of
+   rule colour is what makes twelve of them read as one sheet. */
+.option {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  width: 100%;
+  height: 100%;
+  padding: 1rem 0.9rem;
+  border: 0;
+  background: var(--paper);
+  cursor: pointer;
+  text-align: left;
+  color: var(--ink);
+  animation: rise 460ms cubic-bezier(0.2, 0.7, 0.3, 1) backwards;
+  animation-delay: calc(var(--i) * 35ms);
+  transition:
+    background-color 160ms ease,
+    color 160ms ease;
+}
+
+.option:hover:not(:disabled) {
+  background: var(--surface);
+}
+
+.option:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+/* Picked reads as an inked plate: the accent floods, the type reverses. It is
+   the same gesture the registration marks use elsewhere, which is what keeps
+   this screen part of the product instead of a form in front of it. */
+.option.is-picked,
+.option.is-picked:hover:not(:disabled) {
+  background: var(--reg);
+  color: var(--paper);
+}
+
+.option.is-picked:disabled {
+  opacity: 1;
+}
+
+.option-kicker {
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+
+.option-title {
+  font-family: var(--display);
+  font-size: 1.05rem;
+  font-weight: 500;
+  line-height: 1.2;
+}
+
+.option-meta {
+  margin-top: auto;
+  padding-top: 0.4rem;
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  opacity: 0.7;
+}
+
+.onboard-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-top: 1.75rem;
+}
+
+.action.is-quiet {
+  border-color: transparent;
+  color: var(--ink-2);
+}
+
+.action.is-quiet:hover {
+  border-color: var(--rule);
+  color: var(--ink);
+}
+
 /* ---------- cards ---------- */
 
 .feed {

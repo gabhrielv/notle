@@ -8,17 +8,6 @@
 
 export type Card = {
   cluster_id: number
-  score: number
-  similarity: number
-  /** Cosine against what the reader hid. Zero for anyone who has hidden nothing. */
-  penalty: number
-  age_hours: number
-  /** Profile terms that pushed this cluster up, strongest first. */
-  because: string[]
-  /** Hidden terms that pushed it down, strongest first. */
-  against: string[]
-  /** The cluster's own strongest terms, written by the ingestion job. */
-  about: string[]
   title: string
   url: string
   source: string
@@ -27,31 +16,69 @@ export type Card = {
   size: number
   /** Portals other than the anchor's that ran the same story. */
   also_in: string[]
+  /** The cluster's own strongest terms, written by the ingestion job. */
+  about: string[]
+  /** Profile terms that pushed this cluster up, strongest first. */
+  because: string[]
+  /** Hidden terms that pushed it down, strongest first. */
+  against: string[]
+  /**
+   * Ranking output, and absent on the lists that do not rank. The chronological
+   * page and the search results are ordered by the clock and by how well the
+   * text matches, so a score there would be a number with nothing behind it.
+   */
+  score?: number
+  similarity?: number
+  penalty?: number
 }
 
-export type Feed = {
+/** Every list answers in this shape, which is what lets one scroll drive them all. */
+export type Page = {
+  feed: Card[]
+  /** Where to ask from next, or null when the list has run out. */
+  next_offset: number | null
+}
+
+export type Feed = Page & {
   user: { is_new: boolean; discovery_ratio: number }
   profile: { terms: number; empty: boolean; hidden_terms: number }
-  feed: Card[]
-  /**
-   * Stories the reader's own hide pushed off the page.
-   *
-   * They are not part of the feed and must not be shown as if they were. The
-   * penalty is larger than the spread of scores inside a page, so anything it
-   * touches lands outside it, and without this list the reader would see one
-   * cluster vanish and never learn the same gesture moved others.
-   */
-  held_back: Card[]
 }
+
+export type Latest = Page & {
+  hidden_shown: boolean
+  hidden_count: number
+}
+
+export type Search = Page & { query: string }
 
 export type Signal = 'like' | 'hide'
 
-export async function readFeed(signal?: AbortSignal): Promise<Feed> {
-  const response = await fetch('/api/feed', { signal })
+async function read<T>(path: string, signal?: AbortSignal): Promise<T> {
+  const response = await fetch(path, { signal })
   if (!response.ok) {
-    throw new Error(`feed respondeu ${response.status}`)
+    throw new Error(`${path} respondeu ${response.status}`)
   }
   return response.json()
+}
+
+export function readFeed(offset: number, signal?: AbortSignal): Promise<Feed> {
+  return read(`/api/feed?offset=${offset}`, signal)
+}
+
+export function readLatest(
+  offset: number,
+  showHidden: boolean,
+  signal?: AbortSignal,
+): Promise<Latest> {
+  return read(`/api/latest?offset=${offset}&hidden=${showHidden ? 1 : 0}`, signal)
+}
+
+export function readSearch(
+  query: string,
+  offset: number,
+  signal?: AbortSignal,
+): Promise<Search> {
+  return read(`/api/search?q=${encodeURIComponent(query)}&offset=${offset}`, signal)
 }
 
 export async function record(cluster: number, type: Signal): Promise<void> {
@@ -66,19 +93,26 @@ export async function record(cluster: number, type: Signal): Promise<void> {
 }
 
 /**
- * Age as a reader says it out loud, not as the API stores it.
+ * Age as a reader says it out loud.
  *
- * The API hands back hours as a float because that is what the decay curve
- * consumes; nobody reads "3.4 h".
+ * Computed from the timestamp rather than read off the card, because only the
+ * ranked feed carries an age: the chronological and search lists never asked
+ * the formula anything.
  */
-export function sayAge(hours: number): string {
+export function sayAge(publishedAt: string): string {
+  const hours = (Date.now() - Date.parse(publishedAt)) / 3_600_000
+
+  if (!Number.isFinite(hours) || hours < 0) return 'agora'
   if (hours < 1) {
     const minutes = Math.max(1, Math.round(hours * 60))
     return `há ${minutes} min`
   }
-  if (hours < 24) {
-    return `há ${Math.round(hours)} h`
-  }
+  if (hours < 24) return `há ${Math.round(hours)} h`
+
   const days = Math.round(hours / 24)
-  return days === 1 ? 'ontem' : `há ${days} dias`
+  if (days === 1) return 'ontem'
+  if (days < 30) return `há ${days} dias`
+
+  const months = Math.round(days / 30)
+  return months === 1 ? 'há um mês' : `há ${months} meses`
 }

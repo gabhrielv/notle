@@ -45,10 +45,16 @@ type Props = {
   isLead: boolean
   leaving: boolean
   busy: boolean
+  /**
+   * False on an anonymous search, where the promise is that nothing is
+   * recorded. The buttons are the only thing that records, so they are the
+   * thing that goes.
+   */
+  canAct: boolean
   onAct: (cluster: number, type: Signal) => void
 }
 
-export function Card({ card, index, isLead, leaving, busy, onAct }: Props) {
+export function Card({ card, index, isLead, leaving, busy, canAct, onAct }: Props) {
   const others = card.also_in
   // Beyond the anchor's own article, the rest of a single portal cluster is the
   // same template repeated per city. Counting them is honest; listing the
@@ -83,7 +89,7 @@ export function Card({ card, index, isLead, leaving, busy, onAct }: Props) {
       </h2>
 
       <p className="byline">
-        <b>{card.source}</b> · {sayAge(card.age_hours)}
+        <b>{card.source}</b> · {sayAge(card.published_at)}
       </p>
 
       {others.length > 0 ? (
@@ -136,24 +142,26 @@ export function Card({ card, index, isLead, leaving, busy, onAct }: Props) {
         </dl>
       )}
 
-      <div className="actions">
-        <button
-          type="button"
-          className="action is-keep"
-          disabled={busy}
-          onClick={() => onAct(card.cluster_id, 'like')}
-        >
-          Interessa
-        </button>
-        <button
-          type="button"
-          className="action"
-          disabled={busy}
-          onClick={() => onAct(card.cluster_id, 'hide')}
-        >
-          Ocultar
-        </button>
-      </div>
+      {canAct && (
+        <div className="actions">
+          <button
+            type="button"
+            className="action is-keep"
+            disabled={busy}
+            onClick={() => onAct(card.cluster_id, 'like')}
+          >
+            Interessa
+          </button>
+          <button
+            type="button"
+            className="action"
+            disabled={busy}
+            onClick={() => onAct(card.cluster_id, 'hide')}
+          >
+            Ocultar
+          </button>
+        </div>
+      )}
     </li>
   )
 }

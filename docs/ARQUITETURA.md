@@ -282,9 +282,11 @@ O máximo observado é 0.381, então o pior caso custa 0.038 contra um piso de 0
 
 Um `hide` faz duas coisas: tira aquele cluster, e rebaixa tudo que se parece com ele. O leitor enxerga a primeira e não a segunda, e a razão é aritmética. A pior penalidade custa 0.038, e o intervalo inteiro de score dentro de uma página de 24 cards é menor que isso. Num acervo de 1576 candidatos ordenado por recência, **qualquer card que passe do piso negativo cai para fora da página, e lá não tem onde se explicar**.
 
-Isso não se resolve calibrando `BETA`: uma penalidade pequena o bastante para o card ficar na página é pequena demais para significar alguma coisa. Então a resposta é uma superfície própria. O feed devolve `held_back` ao lado de `feed`, com até cinco matérias que a própria penalidade empurrou para fora, cada uma nomeando o termo que causou. Elas não entram na lista, porque não são matérias que o ranking escolheu mostrar: são a prestação de contas do que ele escolheu não mostrar.
+Isso não se resolve calibrando `BETA`: uma penalidade pequena o bastante para o card ficar na página é pequena demais para significar alguma coisa.
 
-Medido escondendo "novo técnico do Joinville", o bloco devolve exatamente as três do topo da tabela, com `ex-jogador` e `treinador` como causa, e o `técnico` do IFMG barrado pelo piso.
+Houve uma tentativa de resolver dentro do próprio feed, um bloco `held_back` listando as matérias que a penalidade empurrou para fora. Ela foi **descartada por decisão de produto**: um leitor que pediu para não ver um assunto não quer uma seção dedicada a mostrá-lo de volta, por mais bem explicada que ela seja. A prestação de contas passou a ser a página de **Últimas**, que mostra tudo em ordem cronológica e traz um interruptor para incluir o que foi ocultado. Ali o leitor confere o que a instrução dele está custando, no momento em que ele escolhe conferir, em vez de a cada rolagem do feed.
+
+A explicação positiva continua em todo card. A negativa continua no card quando cabe, que é quando o gosto segura a matéria na página apesar da penalidade.
 
 O produto escalar acontece **no banco**, não em Python. Com os vetores serializados num campo JSON, montar um feed exigiria trazer milhares de blobs pra memória do processo e parsear todos, o que é da ordem de centenas de milissegundos e alguns megabytes por request, num ambiente serverless onde tempo de execução é o que se paga, e que cresce linearmente até quebrar.
 
@@ -347,6 +349,26 @@ O ponto de partida é que **o dado já nasce velho de propósito**: a ingestão 
 **Não há balanceador de carga, e isso é deliberado.** Balanceador é o que se coloca na frente de servidores administrados por você. A API é serverless, e a plataforma já distribui entre instâncias. O risco real de queda sob carga num app serverless não é distribuição de request, é **esgotamento de conexão com o banco**, e ele desaparece por construção com libSQL, que fala HTTP e não mantém conexão persistente. O componente ausente resolve um problema que a arquitetura não tem.
 
 **Consequência da métrica do Turso.** O plano cobra por linha varrida, incluindo as descartadas pelo `WHERE`. Isso torna o índice em `article_terms(term, ...)` obrigatório e recomenda recorte de janela dentro da própria consulta, para que o acervo antigo nunca seja tocado por um feed que só olha as últimas semanas.
+
+## As três superfícies
+
+O feed personalizado responde "o que eu leio". Sozinho ele é um recomendador sem escapatória: se o leitor discorda do ranking, não tem para onde ir. As outras duas existem para dar essa saída, e nenhuma delas consulta perfil.
+
+| Rota | Ordem | Perfil | Escreve |
+|---|---|---|---|
+| `/` | score, ou seja gosto e recência | lê os dois vetores | like e hide |
+| `/ultimas` | cronológica pura | só para omitir o que foi ocultado, e há interruptor | like e hide |
+| `/buscar` | `bm25` sobre o texto | nenhum | like e hide, salvo em modo anônimo |
+
+**Últimas não lê de `feed_candidates`.** Aquela tabela é a janela de ranking de 48 horas, e uma lista feita para ser rolada tem que continuar depois de onde o feed deixa de se interessar. Ela ordena por `clusters.first_seen_at`, que é a publicação da matéria que abriu o grupo e tem índice próprio.
+
+**Busca usa FTS5, não `LIKE` nem o índice de lemas.** Os três foram considerados e dois caíram por motivos diferentes. `LIKE` varre o acervo inteiro a cada consulta, que é exatamente o padrão que o custo por linha varrida do D1 pune e que motivou o índice invertido em primeiro lugar. O índice de lemas seria de graça, mas casar a busca contra lemas exige lematizar o que foi digitado, e spaCy não roda dentro do Worker. FTS5 com `remove_diacritics 2` resolve os dois: é indexada, e dobra o acento dos dois lados, então `eleicao` acha `eleição` sem a consulta passar por modelo nenhum.
+
+Uma sutileza que custou uma sessão de depuração: `bm25()` só funciona enquanto o cursor que casou está aberto, e agrupar por cluster sobre uma subquery comum deixa o SQLite achatar as duas, depois do que a mesma consulta falha com *unable to use function bm25 in the requested context*. O `AS MATERIALIZED` no CTE não é dica de desempenho, é o que mantém a função onde ela consegue responder.
+
+**Busca anônima promete só o que é verdade.** Hoje a única coisa que altera o perfil é like e hide, então o modo anônimo tira os botões e nada é escrito. A promessa é exatamente essa na tela, sem sugerir privacidade maior do que existe. Quando a fatia 5 trouxer impressão, dwell e tempo fora, o mesmo interruptor já cobre esses sinais, porque ele desliga o envio inteiro e não um evento específico.
+
+**Paginação por deslocamento, inclusive no feed personalizado**, e isso é seguro por uma propriedade deste corpus e não em geral: o ranking só se move quando a ingestão roda, de hora em hora. Entre duas passadas a ordem é fixa, então a página dois é a mesma lista da página um, mais abaixo. O custo é que cada página relê a janela para reordená-la, e é por isso que a página do feed tem 24 itens onde as outras têm 30.
 
 ## Cold start
 

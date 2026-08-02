@@ -27,8 +27,12 @@
   color-scheme: light dark;
 }
 
+/* The system decides only while the reader has not. Once they pick a side the
+   attribute is on the root, and both branches below have to lose to it, which
+   is why the dark values are stated twice rather than left to the media query
+   alone: a reader who chooses light at night has to get light. */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme='light']) {
     --paper: #131410;
     --surface: #1b1c16;
     --sunk: #0d0e0a;
@@ -37,7 +41,24 @@
     --reg: #ff4d93;
     --rule: rgba(231, 229, 218, 0.16);
     --dot: rgba(231, 229, 218, 0.1);
+    color-scheme: dark;
   }
+}
+
+:root[data-theme='dark'] {
+  --paper: #131410;
+  --surface: #1b1c16;
+  --sunk: #0d0e0a;
+  --ink: #e7e5da;
+  --ink-2: #a3a197;
+  --reg: #ff4d93;
+  --rule: rgba(231, 229, 218, 0.16);
+  --dot: rgba(231, 229, 218, 0.1);
+  color-scheme: dark;
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
 }
 
 *,
@@ -102,6 +123,11 @@ body::before {
 
 .wordmark {
   margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  color: var(--ink);
   font-family: var(--display);
   font-size: 2.1rem;
   font-weight: 600;
@@ -113,10 +139,133 @@ body::before {
   color: var(--reg);
 }
 
+/* The toggle wears the halftone dot the background is made of: filled on paper,
+   hollow on ink. It is the one control that changes the whole surface, so it
+   says so with the surface's own mark rather than with a borrowed sun. */
+.theme {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.6rem;
+  border: 1px solid var(--rule);
+  background: none;
+  cursor: pointer;
+  color: var(--ink-2);
+  font-family: var(--mono);
+  font-size: 0.7rem;
+}
+
+.theme:hover {
+  color: var(--ink);
+  border-color: var(--ink);
+}
+
+.theme-dot {
+  width: 0.62rem;
+  height: 0.62rem;
+  border-radius: 50%;
+  border: 1px solid currentColor;
+  background: currentColor;
+}
+
+:root[data-theme='dark'] .theme-dot {
+  background: none;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .theme-dot {
+    background: none;
+  }
+}
+
+.tabs {
+  display: flex;
+  gap: 1.25rem;
+  margin-top: 0.9rem;
+}
+
+.tab {
+  padding: 0 0 0.3rem;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  cursor: pointer;
+  color: var(--ink-2);
+  font-family: var(--ui);
+  font-size: 0.82rem;
+  font-weight: 500;
+}
+
+.tab:hover {
+  color: var(--ink);
+}
+
+.tab.is-current {
+  color: var(--ink);
+  border-bottom-color: var(--reg);
+}
+
 .standfirst {
-  margin: 0;
+  margin: 1.4rem 0 0;
   font-family: var(--mono);
   font-size: 0.72rem;
+  color: var(--ink-2);
+}
+
+.searchbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1rem;
+  margin-top: 1.5rem;
+}
+
+.searchbox {
+  flex: 1 1 16rem;
+  min-width: 0;
+  padding: 0.55rem 0 0.5rem;
+  border: 0;
+  border-bottom: 2px solid var(--ink);
+  background: none;
+  color: var(--ink);
+  font-family: var(--display);
+  font-size: 1.35rem;
+  font-weight: 500;
+}
+
+.searchbox::placeholder {
+  color: var(--ink-2);
+  opacity: 0.6;
+}
+
+/* The field is a ruled line, not a box, so the focus ring is the rule going
+   accent rather than a rectangle drawn around something that has no sides. */
+.searchbox:focus-visible {
+  outline: none;
+  border-bottom-color: var(--reg);
+}
+
+.switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  cursor: pointer;
+  font-size: 0.76rem;
+  color: var(--ink-2);
+}
+
+.switch input {
+  accent-color: var(--reg);
+}
+
+.switch:hover {
+  color: var(--ink);
+}
+
+.more {
+  margin: 1.5rem 0 0;
+  font-family: var(--mono);
+  font-size: 0.7rem;
   color: var(--ink-2);
 }
 
@@ -395,70 +544,6 @@ body::before {
   height: 0.6rem;
   width: 9rem;
   margin-top: 0.8rem;
-}
-
-/* ---------- what the reader's hide moved ---------- */
-
-/* Set apart from the feed rather than appended to it. These are not stories the
-   ranking chose to show, so they must not read as more of the same list: the
-   rule above them is the same weight as the masthead's, and the type is quieter
-   than any card. */
-.held {
-  margin-top: 3rem;
-  padding-top: 1.25rem;
-  border-top: 2px solid var(--ink);
-}
-
-.held-title {
-  margin: 0 0 0.4rem;
-  font-size: 0.7rem;
-  font-weight: 600;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--reg);
-}
-
-.held-body {
-  margin: 0 0 1.25rem;
-  max-width: 34rem;
-  font-size: 0.85rem;
-  line-height: 1.5;
-  color: var(--ink-2);
-}
-
-.held-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  gap: 0.9rem;
-}
-
-.held-link {
-  font-family: var(--display);
-  font-size: 1rem;
-  font-weight: 500;
-  line-height: 1.25;
-  color: var(--ink-2);
-  text-decoration: none;
-}
-
-.held-link:hover {
-  color: var(--ink);
-}
-
-.held-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.2rem 0.75rem;
-  margin: 0.2rem 0 0;
-  font-family: var(--mono);
-  font-size: 0.68rem;
-  color: var(--ink-2);
-}
-
-.held-terms {
-  color: var(--ink);
 }
 
 .notice {

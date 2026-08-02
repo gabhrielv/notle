@@ -59,7 +59,9 @@ def prepare(drafts: list[ArticleDraft], known_urls: set[str]) -> IngestionPlan:
         if draft.url in known_urls:
             continue
 
-        frequencies = term_frequencies(lemmatize(f"{draft.title}. {draft.summary}"))
+        frequencies = term_frequencies(
+            lemmatize(f"{draft.title}. {draft.summary}", draft.language)
+        )
         if not frequencies:
             # An empty vector has cosine zero against every profile forever, so
             # the row and its cluster could never rank.
@@ -110,7 +112,7 @@ def fetch_drafts(
         if source_id is None:
             continue
         try:
-            drafts.extend(parse_feed(get(source.feed_url), source_id, now))
+            drafts.extend(parse_feed(get(source.feed_url), source_id, now, source.language))
         except Exception:
             continue
 

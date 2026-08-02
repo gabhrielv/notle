@@ -20,6 +20,13 @@ ingest = [
     # Pinned as a dependency rather than fetched by `spacy download`, so the
     # model version is locked and CI needs no extra step.
     "pt-core-news-sm",
+    # English lands in the corpus with the technology feeds. The Portuguese
+    # model on English text does not merely do worse, it invents: `build`
+    # comes back as `buildr` and `tighten` as `tightem`, and plurals survive,
+    # so `model` and `models` become two terms that never meet. That is the
+    # exact failure lemmatisation exists to prevent, arriving in the other
+    # language.
+    "en-core-web-sm",
     # spaCy 3.8 still does `from click import NoSuchOption` in its CLI, and
     # `import spacy` reaches the CLI through spacy/__init__.py. typer dropped
     # click as a dependency in 0.27, so nothing pulls it in any more and even
@@ -34,6 +41,7 @@ dev = [
 
 [tool.uv.sources]
 pt-core-news-sm = { url = "https://github.com/explosion/spacy-models/releases/download/pt_core_news_sm-3.8.0/pt_core_news_sm-3.8.0-py3-none-any.whl" }
+en-core-web-sm = { url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl" }
 
 [tool.pytest.ini_options]
 # src/ holds what the Worker bundles; the repo root holds the ingestion job.

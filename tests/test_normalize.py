@@ -7,7 +7,7 @@ returns what the test told it to.
 
 import pytest
 
-from ingest.normalize import lemmatize, term_frequencies
+from ingest.normalize import _nlp, lemmatize, term_frequencies
 
 
 class TestLemmatize:
@@ -146,6 +146,60 @@ class TestLemmatize:
         assert "charlie brown jr" in lemmas
         assert "rio de janeiro" in lemmas
         assert "acústico" in lemmas
+
+
+class TestEnglish:
+    """The technology feeds publish in English, and the model has to follow."""
+
+    def test_the_portuguese_model_invents_words_in_english(self):
+        """Why a second model rather than one that does its best.
+
+        Running Portuguese over English does not merely lose quality, it makes
+        up lemmas: `build` comes back as `buildr`, `tighten` as `tightem`.
+        Terms the reader is shown as the reason a story ranked cannot be words
+        that do not exist.
+        """
+        wrong = lemmatize("rivals race to build cheaper models as supply tightens", "pt")
+
+        assert "buildr" in wrong
+        assert "build" not in wrong
+
+    def test_plurals_collapse_the_way_they_have_to(self):
+        """The same failure the Portuguese side exists to prevent, in English.
+
+        Untreated, `model` and `models` are two terms that never meet, each
+        holding half the mass with an inflated IDF.
+        """
+        singular = lemmatize("the model shipped", "en")
+        plural = lemmatize("the models shipped", "en")
+
+        assert "model" in singular
+        assert "model" in plural
+
+    def test_attribution_is_dropped_in_english_too(self):
+        """`sources say` names who spoke, never what happened, exactly as
+        `afirmar` did in Portuguese.
+        """
+        lemmas = lemmatize("Apple delays the hub, sources say", "en")
+
+        assert "say" not in lemmas
+        assert "delay" in lemmas
+
+    def test_an_unknown_language_falls_back_rather_than_failing(self):
+        """A feed added with a typo in its language must degrade, not take the
+        hourly run down with it.
+        """
+        assert lemmatize("Copom mantém a Selic", "xx") == lemmatize("Copom mantém a Selic")
+
+    def test_each_language_keeps_its_own_model_loaded(self):
+        """The cache is keyed by language, so a run that alternates between
+        Portuguese and English feeds does not reload a model per article.
+        """
+        lemmatize("teste", "pt")
+        lemmatize("test", "en")
+
+        assert _nlp("pt") is not _nlp("en")
+        assert _nlp("pt") is _nlp("pt")
 
 
 class TestTermFrequencies:

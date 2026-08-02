@@ -38,6 +38,10 @@ class ArticleDraft:
     summary: str
     url: str
     published_at: str
+    # Which spaCy model reduces this to lemmas. It travels with the draft rather
+    # than being looked up later, because by the time `prepare` runs the source
+    # is an integer id and the language would have to be joined back out.
+    language: str = "pt"
 
 
 def clean_summary(raw: str | None) -> str:
@@ -75,7 +79,9 @@ def _published_at(entry, now: datetime) -> str:
     return moment.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def parse_feed(raw_xml: bytes, source_id: int, now: datetime) -> list[ArticleDraft]:
+def parse_feed(
+    raw_xml: bytes, source_id: int, now: datetime, language: str = "pt"
+) -> list[ArticleDraft]:
     """Parses one feed. A broken feed yields nothing rather than raising.
 
     The hourly run reads several portals, and one of them serving garbage must
@@ -94,7 +100,9 @@ def parse_feed(raw_xml: bytes, source_id: int, now: datetime) -> list[ArticleDra
             continue
 
         summary = clean_summary(entry.get("summary") or entry.get("description"))
-        drafts.append(ArticleDraft(source_id, title, summary, url, _published_at(entry, now)))
+        drafts.append(
+            ArticleDraft(source_id, title, summary, url, _published_at(entry, now), language)
+        )
 
     return drafts
 

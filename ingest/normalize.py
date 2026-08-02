@@ -17,7 +17,18 @@ import spacy
 # hyphenated name or a multi-word entity survives intact.
 _EDGE_NOISE = re.compile(r"^[^\w]+|[^\w]+$")
 
-MODEL = "pt_core_news_sm"
+# One model per language the corpus carries. The technology feeds publish in
+# English, and running Portuguese over English does not merely do worse, it
+# invents: `build` comes back as `buildr`, `tighten` as `tightem`, and plurals
+# survive untouched, so `model` and `models` become two terms that never meet.
+# That is precisely the failure lemmatisation exists to prevent, arriving in the
+# other language.
+MODELS = {
+    "pt": "pt_core_news_sm",
+    "en": "en_core_web_sm",
+}
+
+DEFAULT_LANGUAGE = "pt"
 
 # The parts of speech that carry topic. Everything else (determiner,
 # preposition, conjunction, pronoun, auxiliary, numeral, symbol, punctuation)
@@ -78,7 +89,57 @@ CHROME = frozenset(
     }
 )
 
-DISCARDED = LIGHT_VERBS | REPORTING_VERBS | CHROME
+# The same three categories in English, for the technology feeds. Shorter
+# because English morphology hides less: spaCy reduces `says`, `said` and
+# `saying` to `say` without help, so only the words themselves need naming.
+#
+# `say` earns its place the way `afirmar` did. Headlines in this register are
+# built on attribution, and `sources say` names who spoke, never what happened.
+EN_LIGHT_VERBS = frozenset(
+    {
+        "be",
+        "have",
+        "do",
+        "make",
+        "get",
+        "go",
+        "come",
+        "take",
+        "give",
+        "know",
+        "think",
+        "see",
+        "want",
+        "use",
+        "need",
+        "let",
+    }
+)
+
+EN_REPORTING_VERBS = frozenset({"say", "tell", "report", "announce", "claim", "state"})
+
+# Chrome the technology press pastes around a story. `read` is the tail of "read
+# more", and weekdays are temporal furniture in any language: nearly every
+# article names one, so naming one separates nothing.
+EN_CHROME = frozenset(
+    {
+        "read",
+        "monday",
+        "tuesday",
+        "wednesday",
+        "thursday",
+        "friday",
+        "saturday",
+        "sunday",
+        "today",
+        "week",
+    }
+)
+
+DISCARDED = {
+    "pt": LIGHT_VERBS | REPORTING_VERBS | CHROME,
+    "en": EN_LIGHT_VERBS | EN_REPORTING_VERBS | EN_CHROME,
+}
 
 # Function words that entity recognition sweeps into a span. spaCy hands back
 # `de Sao Paulo` as one location, and merging that verbatim produces a token
@@ -91,8 +152,8 @@ SPAN_EDGE_POS = frozenset({"ADP", "DET"})
 MIN_LENGTH = 3
 
 
-@functools.lru_cache(maxsize=1)
-def _nlp():
+@functools.lru_cache(maxsize=len(MODELS))
+def _nlp(language: str = DEFAULT_LANGUAGE):
     """Loads the model once per process.
 
     The dependency parser is dead weight for lemmas, but entity recognition
@@ -100,7 +161,7 @@ def _nlp():
     of two meaningless ones. This runs in the ingestion job, where time is
     free, never inside a request.
     """
-    return spacy.load(MODEL, disable=["parser"])
+    return spacy.load(MODELS.get(language, MODELS[DEFAULT_LANGUAGE]), disable=["parser"])
 
 
 def _segments(entity):
@@ -145,12 +206,18 @@ def _merge_entities(doc) -> None:
                     retokenizer.merge(span, attrs={"LEMMA": span.text})
 
 
-def lemmatize(text: str) -> list[str]:
-    """Reduces text to its topic-carrying lemmas, lowercased."""
+def lemmatize(text: str, language: str = DEFAULT_LANGUAGE) -> list[str]:
+    """Reduces text to its topic-carrying lemmas, lowercased.
+
+    `language` selects the model and the discard list together, because the two
+    have to agree: an English discard list applied to Portuguese output removes
+    nothing, and the reverse removes nothing either.
+    """
     if not text or not text.strip():
         return []
 
-    doc = _nlp()(text)
+    discarded = DISCARDED.get(language, DISCARDED[DEFAULT_LANGUAGE])
+    doc = _nlp(language)(text)
     _merge_entities(doc)
 
     lemmas = []
@@ -159,7 +226,7 @@ def lemmatize(text: str) -> list[str]:
             continue
 
         lemma = _EDGE_NOISE.sub("", token.lemma_.lower().strip())
-        if not lemma or lemma in DISCARDED:
+        if not lemma or lemma in discarded:
             continue
         # A portal prefixes summaries with an emoji, and it rode into an entity
         # span. A term the reader cannot pronounce explains nothing.

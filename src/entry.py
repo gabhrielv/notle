@@ -17,7 +17,7 @@ from urllib.parse import parse_qs, urlparse
 
 from workers import Response
 
-from api import browse, feed, profile, users
+from api import browse, feed, onboarding, profile, users
 from api.db import execute, query_one
 
 # What a reader is allowed to record. A hide both excludes its own cluster and
@@ -70,6 +70,13 @@ async def read_feed(request, env):
     answered = await profile.acted_on(env, user["id"])
     cards = await feed.build(env, stored, avoided, answered, datetime.now(UTC), offset)
 
+    # The cold start rides along rather than being asked for separately. A
+    # visitor who has answered nothing is the visitor this screen has to be
+    # fastest for, and fetching the headlines in a second call would put a round
+    # trip in front of the one screen that decides whether they stay. It costs a
+    # returning reader nothing: `pending` is false and the query never runs.
+    owed = offset == 0 and await onboarding.pending(env, user)
+
     headers = dict(PRIVATE)
     if is_new:
         headers["Set-Cookie"] = users.set_cookie(user["id"])
@@ -77,6 +84,11 @@ async def read_feed(request, env):
     return Response.json(
         {
             "user": {"is_new": is_new, "discovery_ratio": user["discovery_ratio"]},
+            "onboarding": {
+                "pending": owed,
+                "picks": onboarding.PICKS,
+                "feed": await onboarding.offer(env) if owed else [],
+            },
             "profile": {
                 "terms": len(stored),
                 "empty": not stored,
@@ -87,6 +99,33 @@ async def read_feed(request, env):
             # stops asking, which is what ends an endless scroll.
             "next_offset": offset + len(cards) if len(cards) >= feed.PAGE else None,
         },
+        headers=headers,
+    )
+
+
+async def write_onboarding(request, env):
+    """Records what was chosen, or that nothing was.
+
+    Both answers mark the reader as done. Skipping has to be an answer the
+    system accepts, or the only way past a screen that will not take no is the
+    close button.
+    """
+    user, is_new = await users.identify(env, request.headers.get("Cookie"))
+
+    try:
+        body = json.loads(await request.text())
+    except ValueError:
+        return Response.json({"error": "corpo invalido"}, status=400)
+
+    chosen = await onboarding.answer(env, user["id"], body.get("picks"))
+    vector, _ = await profile.rebuild(env, user["id"])
+
+    headers = dict(PRIVATE)
+    if is_new:
+        headers["Set-Cookie"] = users.set_cookie(user["id"])
+
+    return Response.json(
+        {"ok": True, "chosen": chosen, "profile": {"terms": len(vector)}},
         headers=headers,
     )
 
@@ -200,6 +239,7 @@ ROUTES = {
     ("GET", "/api/feed"): read_feed,
     ("GET", "/api/latest"): read_latest,
     ("GET", "/api/search"): read_search,
+    ("POST", "/api/onboarding"): write_onboarding,
     ("POST", "/api/interactions"): record,
 }
 

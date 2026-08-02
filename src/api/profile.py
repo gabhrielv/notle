@@ -20,7 +20,14 @@ from ranking.vectors import idf, weigh
 
 # What each explicit signal is worth. Slice 1 only records two of them; the rest
 # of the funnel arrives later and lands in the same table.
-POSITIVE_WEIGHTS = {"like": 1.0, "save": 1.2, "share": 1.5}
+# `seed` is what the onboarding records, and it is kept apart from `like` even
+# though both weigh 1.0 and both land in the same vector. Choosing among twelve
+# headlines in a form is not the gesture of keeping a story while reading, and
+# the architecture's line on interactions being events rather than flags is
+# exactly about not throwing that distinction away: once the two are written as
+# one type, no later slice can ask whether a seed predicts taste as well as a
+# like does, which is a question the persona simulator is meant to answer.
+POSITIVE_WEIGHTS = {"seed": 1.0, "like": 1.0, "save": 1.2, "share": 1.5}
 
 # Hiding is kept apart rather than entered as a negative number in the same
 # vector, and the reason is arithmetic. With one signed vector the decay

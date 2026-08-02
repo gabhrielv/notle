@@ -13,7 +13,7 @@ free of them anyway.
 import asyncio
 from datetime import UTC, datetime
 
-from api import browse, feed, profile, users
+from api import browse, feed, onboarding, profile, users
 
 NOW = datetime(2026, 7, 31, 12, tzinfo=UTC)
 
@@ -40,7 +40,87 @@ def patched(monkeypatch, env):
     monkeypatch.setattr(profile, "query", fake_query)
     monkeypatch.setattr(feed, "query", fake_query)
     monkeypatch.setattr(browse, "query", fake_query)
+    monkeypatch.setattr(onboarding, "query", fake_query)
     return env
+
+
+class TestOnboardingPicks:
+    """What the cold start accepts as an answer."""
+
+    OFFERED = {11, 12, 13, 14}
+
+    def test_keeps_the_choices_that_were_on_the_screen(self):
+        assert onboarding._valid([13, 11], self.OFFERED) == [13, 11]
+
+    def test_an_id_that_was_never_offered_is_dropped(self):
+        """`interactions.cluster_id` carries no foreign key, so an id that never
+        existed would be stored happily and then poison the profile rebuild with
+        a join that matches nothing.
+        """
+        assert onboarding._valid([99, 11], self.OFFERED) == [11]
+
+    def test_the_same_choice_twice_counts_once(self):
+        """Otherwise a doubled pick weighs double in the mean, and the reader
+        never said it twice.
+        """
+        assert onboarding._valid([11, 11, 12], self.OFFERED) == [11, 12]
+
+    def test_more_than_asked_for_is_trimmed(self):
+        assert len(onboarding._valid([11, 12, 13, 14], self.OFFERED)) == onboarding.PICKS
+
+    def test_junk_is_not_an_answer(self):
+        assert onboarding._valid("11", self.OFFERED) == []
+        assert onboarding._valid(None, self.OFFERED) == []
+        assert onboarding._valid([{"cluster_id": 11}, "11", 1.5], self.OFFERED) == []
+
+    def test_choosing_nothing_is_allowed(self):
+        """Skipping is an answer the system has to accept. The way past a screen
+        that will not take no is the close button.
+        """
+        assert onboarding._valid([], self.OFFERED) == []
+
+
+class TestOnboardingAnswer:
+    def test_skipping_still_marks_the_reader_as_done(self, monkeypatch):
+        """Without the mark a visitor who skipped meets the same form on every
+        visit, which is the failure the column exists to prevent.
+        """
+        env = patched(monkeypatch, FakeEnv())
+        writes = []
+
+        async def fake_execute(env, sql, params=None):
+            writes.append(sql)
+
+        monkeypatch.setattr(onboarding, "execute", fake_execute)
+
+        chosen = asyncio.run(onboarding.answer(env, "u1", []))
+
+        assert chosen == []
+        assert any("UPDATE users SET onboarded_at" in sql for sql in writes)
+        assert not any("INSERT INTO interactions" in sql for sql in writes)
+
+    def test_choices_are_written_as_seed_rather_than_like(self, monkeypatch):
+        """Choosing among twelve headlines in a form is not the gesture of
+        keeping a story while reading, and once the two are written as one type
+        the distinction never comes back.
+        """
+        env = patched(
+            monkeypatch,
+            FakeEnv({"FROM onboarding_picks": [{"cluster_id": 11}, {"cluster_id": 12}]}),
+        )
+        writes = []
+
+        async def fake_execute(env, sql, params=None):
+            writes.append((sql, list(params or [])))
+
+        monkeypatch.setattr(onboarding, "execute", fake_execute)
+
+        chosen = asyncio.run(onboarding.answer(env, "u1", [12, 11]))
+
+        assert chosen == [12, 11]
+        inserted = next(sql for sql, _ in writes if "INSERT INTO interactions" in sql)
+        assert "'seed'" in inserted
+        assert "'like'" not in inserted
 
 
 class TestMatchExpression:

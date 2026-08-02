@@ -74,7 +74,7 @@ async def identify(env, cookie_header: str | None) -> tuple[dict, bool]:
     if looks_like_ours(user_id):
         row = await query_one(
             env,
-            "SELECT id, discovery_ratio FROM users WHERE id = ?",
+            "SELECT id, discovery_ratio, onboarded_at FROM users WHERE id = ?",
             [user_id],
         )
         if row:
@@ -103,4 +103,6 @@ async def create(env) -> dict:
         [user_id, created_at],
     )
 
-    return {"id": user_id, "discovery_ratio": 0.15}
+    # A visitor who has just been created has answered nothing, which is what
+    # the onboarding reads to decide whether it owes them a screen.
+    return {"id": user_id, "discovery_ratio": 0.15, "onboarded_at": None}

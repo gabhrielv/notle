@@ -30,6 +30,7 @@ name.
 import argparse
 from collections import Counter
 
+from ingest.feeds import strip_promotion
 from ingest.normalize import lemmatize, term_frequencies
 from ingest.sources import portal_names
 from ingest.store import MAX_BOUND_PARAMS, D1Client, chunked
@@ -53,6 +54,22 @@ def languages() -> dict[str, str]:
     from ingest.sources import SOURCES
 
     return {source.feed_url: source.language for source in SOURCES}
+
+
+def rewrite_summary(client: D1Client, article_id: int, summary: str) -> None:
+    """Replaces a stored summary that still carries the portal's invitation.
+
+    Three places hold it and all three have to move together. `articles.summary`
+    is what the card shows the reader, `article_search` is a plain FTS5 table
+    with its own copy rather than an external content one, and `article_terms`
+    is rebuilt from the same text just below. Leaving the search index behind
+    would make a query for the invitation return articles whose visible text no
+    longer contains it.
+    """
+    client.query("UPDATE articles SET summary = ? WHERE id = ?", [summary, article_id])
+    client.query(
+        "UPDATE article_search SET summary = ? WHERE rowid = ?", [summary, article_id]
+    )
 
 
 def rewrite(client: D1Client, article_id: int, frequencies: dict[str, float]) -> None:
@@ -94,6 +111,7 @@ def run(client: D1Client | None = None, dry_run: bool = False):
 
     seen = 0
     changed = 0
+    cleaned = 0
     counts: Counter = Counter()
     offset = 0
 
@@ -104,7 +122,16 @@ def run(client: D1Client | None = None, dry_run: bool = False):
 
         for row in page:
             language = by_feed.get(row["feed_url"], "pt")
-            lemmas = lemmatize(f"{row['title']}. {row['summary']}", language)
+
+            # The stored summary predates the rule that strips the portal's
+            # invitation, so it is fixed here before it is read for terms.
+            summary = strip_promotion(row["summary"] or "")
+            if summary != (row["summary"] or ""):
+                cleaned += 1
+                if not dry_run:
+                    rewrite_summary(client, row["id"], summary)
+
+            lemmas = lemmatize(f"{row['title']}. {summary}", language)
             frequencies = term_frequencies([x for x in lemmas if x not in banned])
 
             seen += 1
@@ -124,7 +151,7 @@ def run(client: D1Client | None = None, dry_run: bool = False):
         recount(client, counts)
         client.query("UPDATE corpus_stats SET total_docs = ? WHERE id = 1", [changed])
 
-    return seen, changed, len(counts)
+    return seen, changed, len(counts), cleaned
 
 
 if __name__ == "__main__":
@@ -132,6 +159,9 @@ if __name__ == "__main__":
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
-    seen, changed, vocabulary = run(dry_run=args.dry_run)
+    seen, changed, vocabulary, cleaned = run(dry_run=args.dry_run)
     verb = "reescreveria" if args.dry_run else "reescreveu"
-    print(f"{seen} artigos lidos, {verb} {changed}, vocabulario de {vocabulary} termos")
+    print(
+        f"{seen} artigos lidos, {verb} {changed}, vocabulario de {vocabulary} termos, "
+        f"{cleaned} resumos limpos de chamada promocional"
+    )

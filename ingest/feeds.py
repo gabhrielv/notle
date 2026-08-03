@@ -66,6 +66,18 @@ class ArticleDraft:
     language: str = "pt"
 
 
+def strip_promotion(text: str) -> str:
+    """Removes the portal's invitations and collapses the whitespace they leave.
+
+    Separate from `clean_summary` because the summaries already in the corpus
+    were stored before this rule existed, and they carry the invitation in the
+    text the card shows. `reprocess_terms` runs this over them, and it must not
+    also unescape entities or strip tags a second time on text that has already
+    had both done to it.
+    """
+    return _WHITESPACE.sub(" ", _PROMO.sub(" ", text)).strip()
+
+
 def clean_summary(raw: str | None) -> str:
     """Strips markup, removes the promotional tail, and collapses whitespace.
 
@@ -78,8 +90,7 @@ def clean_summary(raw: str | None) -> str:
 
     text = html.unescape(raw)
     text = _TAG.sub(" ", text)
-    text = _PROMO.sub(" ", text)
-    text = _WHITESPACE.sub(" ", text).strip()
+    text = strip_promotion(text)
 
     if len(text) <= SUMMARY_MAX_CHARS:
         return text

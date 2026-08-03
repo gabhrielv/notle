@@ -127,7 +127,12 @@ def fetch_drafts(
     def read(source) -> bytes | None:
         try:
             return get(source.feed_url)
-        except Exception:
+        except Exception as failure:
+            # Named, because a silent skip is indistinguishable from a portal
+            # that published nothing. One feed answered from a laptop and
+            # returned nothing from the runner, and there was no way to tell
+            # whether it had been refused, timed out, or simply been quiet.
+            print(f"feed falhou: {source.name}: {type(failure).__name__}: {failure}")
             return None
 
     # `map` hands results back in the order of its input, so the drafts are built

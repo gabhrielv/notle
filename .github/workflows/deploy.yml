@@ -37,13 +37,14 @@ jobs:
             pnpm-lock.yaml
             web/pnpm-lock.yaml
 
-      # `web` não é membro do workspace: tem lockfile próprio, então precisa da
-      # sua própria instalação. A raiz traz só o wrangler.
+      # `web` tem lockfile próprio e fica dentro do escopo do workspace da raiz,
+      # então sem `--ignore-workspace` o pnpm resolve a raiz, responde "already
+      # up to date" e não instala nada. A raiz traz só o wrangler.
       - name: Install dependencies
         run: |
           uv sync --group ingest --group dev --frozen
           pnpm install --frozen-lockfile
-          pnpm --dir web install --frozen-lockfile
+          cd web && pnpm install --frozen-lockfile --ignore-workspace
 
       - name: Test
         run: uv run --group ingest --group dev python -m pytest -q

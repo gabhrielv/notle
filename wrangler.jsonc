@@ -17,7 +17,12 @@
     {
       "binding": "DB",
       "database_name": "notle",
-      "database_id": "4be63ca6-d903-40b7-bef8-9eaea0ad139f"
+      "database_id": "4be63ca6-d903-40b7-bef8-9eaea0ad139f",
+
+      // Onde `wrangler d1 migrations` procura. As cinco primeiras foram
+      // aplicadas à mão antes disto existir e estão registradas na tabela de
+      // controle, para que a sexta suba por comando em vez de por memória.
+      "migrations_dir": "migrations"
     }
   ],
 

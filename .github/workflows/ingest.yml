@@ -12,7 +12,7 @@ on:
 
 # A slow run must not overlap the next hour's and double-count the corpus.
 concurrency:
-  group: ingest
+  group: corpus-write
   cancel-in-progress: false
 
 jobs:

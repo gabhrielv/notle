@@ -17,7 +17,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: cooccurrence
+  group: corpus-write
   cancel-in-progress: false
 
 jobs:

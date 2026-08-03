@@ -483,6 +483,58 @@ Cada constante deixa de ser chute e vira resultado de busca em grade contra o si
 
 **Ressalva honesta, registrada de propósito:** o simulador só vale se o modelo de comportamento da persona for independente da fórmula avaliada. Se a persona curte exatamente aquilo que o algoritmo prevê, o experimento prova apenas que o sistema concorda consigo mesmo.
 
+### Como a independência foi obtida
+
+A verdade da persona é **o portal que publicou**. O ranking nunca vê `source_id`: ele não entra em vetor, cosseno, IDF nem decay, e nada abaixo de `article_terms` sabe que uma matéria veio da IEEE Spectrum e não do G1. Isso torna o gabarito disjunto do espaço de atributos, e a pergunta vira a certa: guardar uma matéria de tecnologia faz o sistema subir outra de tecnologia, sendo que ele nunca soube o que tecnologia significa?
+
+O simulador **importa** `ranking.score` e `ranking.vectors` em vez de reimplementá-los. Só o produto escalar, que em produção é SQL sobre o índice invertido, vira laço em memória; a aritmética dos dois lados é a mesma. Um simulador que aproxima a fórmula calibra a aproximação.
+
+### O que a simulação disse
+
+Persona de tecnologia, 1423 clusters na janela, acaso de 0.052:
+
+| rodada | 1 | 2 | 3 | 4 | **5** | 6 | 7 | 8 |
+|---|---|---|---|---|---|---|---|---|
+| precisão@24 | 0.04 | 0.12 | 0.42 | 0.42 | **0.50** | 0.38 | 0.21 | 0.12 |
+
+O sistema **aprende**: 0.50 contra 0.052 de acaso é quase dez vezes, e ele nunca soube o que é um portal. Depois **regride**, e não por esgotar o assunto: na rodada 8 ainda sobravam 55 dos 74 clusters de tecnologia.
+
+A causa aparece olhando o perfil por dentro:
+
+| rodada | termos mais fortes do perfil |
+|---|---|
+| 3, precisão 0.42 | `android, armazenamento, pixels, backups, qhd, atalho` |
+| 9, precisão 0.04 | `promoção, bom, olhar digital, post, aparecer, amazon, opção, usar` |
+
+Olhar Digital e Canaltech publicam listas de oferta. A persona as guarda por serem de portal de tecnologia, e o vocabulário genérico de comércio captura o perfil, porque **a média é dominada pelo que se repete entre o que foi guardado**, e num conjunto heterogêneo o que se repete é o enchimento e não o assunto. `olhar digital` virou termo porque o portal se nomeia nos próprios resumos.
+
+### O que a busca em grade concluiu, que foi pouco
+
+Busca em coordenada, uma constante por vez em torno do valor atual, pontuando na melhor rodada porque pontuar na última classificaria as constantes por quão rápido colapsam:
+
+| constante | atual | melhor medido | diferença |
+|---|---|---|---|
+| `W_RECENCIA` | 0.04 → 0.50 | 0.02 e 0.03 → 0.54 | 1 card em 24 |
+| `BETA` | 0.10 → 0.50 | **idêntico de 0.05 a 0.50** | nenhuma |
+| `W_COOCOR` | 0.25 → 0.50 | 0.0 → 0.54 | 1 card em 24 |
+| `HALF_LIFE_HOURS` | 12 → 0.50 | 36 → 0.58 | mas diversidade cai de 0.29 a 0.21 |
+
+**Nenhuma constante foi alterada**, e essa é a conclusão e não uma omissão. As diferenças são de um ou dois cards em vinte e quatro, medidas com uma persona sobre um retrato do corpus, e mudar um valor com essa evidência trocaria um número escolhido no olho por um número escolhido no ruído.
+
+Três leituras que valem mais que a grade:
+
+**`BETA` é inerte.** De 0.05 a 0.50 a curva não muda um dígito. O `NEGATIVE_FLOOR` de 0.10 é alto o bastante para o vetor negativo quase nunca agir, o que a fatia 3 já tinha medido de outro jeito: um `hide` alcançava 3 candidatos de 1576. A constante não está errada, está sem oportunidade de estar certa.
+
+**`W_COOCOR` reduzir a precisão é o anti-bolha funcionando.** A expansão puxa de propósito para assunto vizinho, que por definição da persona é assunto errado. Uma métrica que premia convergência tem que punir descoberta, e o valor 0.0 vencer por um card é a métrica dizendo isso, não o mecanismo estando errado.
+
+**A regressão do perfil é maior que qualquer constante.** Nenhum valor testado impede a queda depois da quinta rodada, porque a causa não está na fórmula de ranking e sim em `combine`, que é média simples sem corte de termos e sem decaimento. A tabela dos quatro vetores diz que o perfil longo tem constante de tempo de meses, e o código não implementa decaimento nenhum: um like de um mês atrás pesa igual a um de um minuto atrás.
+
+### Persona de política, o controle negativo
+
+Também rodada, e **falhou**: precisão nunca passou do acaso. Poder360 tem 103 clusters na janela, mas o vocabulário de política é dividido com G1, Folha e CNN, então não há nada distintivo para aprender e "Poder360" é editora, não assunto.
+
+Isso está registrado porque um simulador que sempre devolve um número bonito não serve para nada. O método distingue o caso em que o gabarito é um assunto de verdade do caso em que ele é só um rótulo, e uma persona de portal único cai no segundo.
+
 Além disso, testes unitários nas funções puras (cosseno, decay, lematização, montagem de vetor), e mais adiante um holdout com uso real e métricas clássicas de recuperação (Precision@k, MRR, NDCG) como seção de resultados em produção.
 
 ## Decisões técnicas

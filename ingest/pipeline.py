@@ -10,6 +10,8 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
+from concurrent.futures import ThreadPoolExecutor
+
 import httpx
 
 from ingest import candidates, onboarding
@@ -22,6 +24,16 @@ from ranking.vectors import weigh
 
 USER_AGENT = "notle/0.1 (+https://github.com/gabhrielv/notle)"
 FETCH_TIMEOUT = 25.0
+
+# Reading a feed is waiting on a socket, not work, so the loop that did it one
+# portal at a time spent the job's whole budget on idling. Serial, the worst case
+# is the number of feeds times the timeout above, which at 45 portals is 18.7
+# minutes against a 15 minute ceiling: a bad afternoon on a handful of hosts
+# would time the run out and write nothing at all.
+#
+# Ten at a time puts that worst case near two minutes and leaves room to keep
+# adding portals. Lemmatisation stays serial, which is where the CPU actually is.
+FETCH_WORKERS = 10
 
 # How far back a story can still gather later coverage. A day is roughly how
 # long the same event keeps being republished; past that, an article about the
@@ -110,13 +122,29 @@ def fetch_drafts(
     get = get or _http_get
     source_ids = source_ids or {}
 
+    wanted = [source for source in sources if source_ids.get(source.feed_url) is not None]
+
+    def read(source) -> bytes | None:
+        try:
+            return get(source.feed_url)
+        except Exception:
+            return None
+
+    # `map` hands results back in the order of its input, so the drafts are built
+    # in feed order no matter which portal answers first. That matters because
+    # `dedupe_by_url` keeps the first sighting of a URL, and an order that
+    # depended on the network would make the winning portal vary between runs.
+    with ThreadPoolExecutor(max_workers=FETCH_WORKERS) as pool:
+        payloads = list(pool.map(read, wanted))
+
     drafts: list[ArticleDraft] = []
-    for source in sources:
-        source_id = source_ids.get(source.feed_url)
-        if source_id is None:
+    for source, raw in zip(wanted, payloads):
+        if raw is None:
             continue
         try:
-            drafts.extend(parse_feed(get(source.feed_url), source_id, now, source.language))
+            drafts.extend(
+                parse_feed(raw, source_ids[source.feed_url], now, source.language)
+            )
         except Exception:
             continue
 

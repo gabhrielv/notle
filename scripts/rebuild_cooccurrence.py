@@ -12,8 +12,9 @@ nothing anybody could notice.
 
 import argparse
 from collections import defaultdict
+from datetime import UTC, datetime, timedelta
 
-from ingest import cooccurrence
+from ingest import cooccurrence, prune
 from ingest.store import D1Client
 
 # Rows per read. Article terms run to nearly ninety thousand, and a page this
@@ -98,6 +99,18 @@ def materialize(client: D1Client, rows) -> None:
 
 
 def run(client: D1Client | None = None, dry_run: bool = False):
+    """Rebuilds the neighbours, then prunes what nobody will compare again.
+
+    In that order, and the order is the point. Pruning first would shrink the
+    archive this job measures against, so the neighbours would be computed from
+    a corpus that the prune had just cut down. Reading everything first and
+    cutting afterwards costs one pass and keeps the two independent.
+
+    Here rather than in the hourly run because the delete scans `articles` and
+    `interactions` to work out what to protect, and D1 bills rows read. Once a
+    week is often enough for a table that grows by seventeen thousand rows a
+    day.
+    """
     client = client or D1Client.from_env()
 
     counts = read_document_counts(client)
@@ -110,7 +123,12 @@ def run(client: D1Client | None = None, dry_run: bool = False):
     if not dry_run:
         materialize(client, rows)
 
-    return len(articles), len(eligible), len(pairs), len(rows)
+    cutoff = (datetime.now(UTC) - timedelta(days=prune.RETENTION_DAYS)).strftime(
+        "%Y-%m-%dT%H:%M:%SZ"
+    )
+    pruned = prune.plan(client, cutoff) if dry_run else prune.run(client, cutoff)
+
+    return len(articles), len(eligible), len(pairs), len(rows), pruned
 
 
 if __name__ == "__main__":
@@ -118,9 +136,11 @@ if __name__ == "__main__":
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
-    articles, eligible, pairs, rows = run(dry_run=args.dry_run)
+    articles, eligible, pairs, rows, pruned = run(dry_run=args.dry_run)
     verb = "escreveria" if args.dry_run else "escreveu"
+    corte = "podaria" if args.dry_run else "podou"
     print(
         f"{articles} artigos, {eligible} termos elegiveis, "
-        f"{pairs} pares distintos, {verb} {rows} vizinhos"
+        f"{pairs} pares distintos, {verb} {rows} vizinhos, "
+        f"{corte} {pruned} linhas de article_terms"
     )

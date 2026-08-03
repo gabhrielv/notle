@@ -1,7 +1,8 @@
 """Turns affinity and age into a position in the feed.
 
-    score = (W_GOSTO  * cosine(profile,         cluster)
-            + W_SESSAO * cosine(session_profile, cluster)   # adaptativo, teto 0.35
+    score = (W_GOSTO   * cosine(profile,          cluster)
+            + W_SESSAO  * cosine(session_profile,  cluster)   # adaptativo, teto 0.35
+            + W_COOCOR  * cosine(expanded_profile, cluster)
             + W_RECENCIA) * decay(age)
             - BETA * cosine(negative_profile, cluster)
 
@@ -110,6 +111,20 @@ NEGATIVE_FLOOR = 0.10
 # back toward exactly the subject the reader asked it to drop.
 BETA = 0.1
 
+# What an adjacent subject is worth against one the reader actually chose.
+#
+# Deliberately the smallest of the three affinity weights. The expanded profile
+# is an offer rather than a claim: the reader never touched these subjects, and
+# the corpus merely observed that they sit next to something the reader did
+# touch. At 0.25 a perfect match on a neighbouring subject is worth a quarter of
+# a perfect match on a chosen one, so expansion can lift a story into view and
+# can never put it above what the reader asked for.
+#
+# It also stays under the session cap of 0.35, which keeps the ordering of the
+# three honest: what you are reading now says more than what the corpus thinks
+# is next door.
+W_COOCOR = 0.25
+
 # News dies in 48 hours. At a 12 hour half life a story from two days ago carries
 # 6% of the weight of one from now, which is small enough to keep the feed from
 # looking stale and large enough that a good old story can still outrank a dull
@@ -206,6 +221,7 @@ def score(
     penalty: float = 0.0,
     session_value: float = 0.0,
     session_weight: float = 0.0,
+    adjacent_value: float = 0.0,
 ) -> float:
     """Where a candidate lands: how well it matches, how old it is, what it recalls.
 
@@ -221,7 +237,11 @@ def score(
     afternoon of reading about one subject must not resurface something from two
     days ago simply because it matches.
     """
-    taste = W_GOSTO * similarity_value + session_weight * session_value
+    taste = (
+        W_GOSTO * similarity_value
+        + session_weight * session_value
+        + W_COOCOR * adjacent_value
+    )
     return (taste + W_RECENCIA) * decay(age_hours) - BETA * penalty
 
 

@@ -259,6 +259,20 @@ A substituição usa o próprio corpus como população: se `selic` co-ocorre co
 
 A co-ocorrência é recalculada em lote uma vez por semana, gravando só os vizinhos mais fortes de cada termo, e não atualizada par a par durante a ingestão. Atualizar incrementalmente custaria cerca de 300 pares por artigo, o que em 300 artigos diários daria 90 mil escritas por dia para uma estatística que se move devagar. O lote semanal derruba isso em mais de uma ordem de grandeza sem perda de qualidade perceptível.
 
+### Como a associação é medida, e os dois filtros que ela exigiu
+
+**Dice**, não contagem crua nem PMI. Contagem crua faz os vizinhos de qualquer termo virarem as palavras mais comuns do corpus, então `selic` viria ao lado de `governo` e `ano`, e a expansão puxaria o perfil para o centro em vez de para o lado. PMI capta par específico melhor, mas premia coincidência: um par visto duas vezes, nos dois únicos artigos em que qualquer um dos termos apareceu, marca no topo.
+
+Números do acervo de 3121 artigos: **18195 termos**, dos quais 4730 chegam a 3 documentos, 3025 a 5 e 1683 a 10. Com corte em 5 documentos e 8 vizinhos por termo, o job produz **21685 linhas em 0.9s** e ~660 requisições de escrita, que é trabalho de minutos numa rotina semanal e impensável numa horária.
+
+Ler os vizinhos revelou dois problemas, os dois resolvidos por regra estrutural em vez de lista:
+
+**Termo de um portal só é mobília daquele portal.** O vizinho mais forte de `google` vinha `favorite o g1`, com 0.51, porque o G1 cola essa linha nas matérias de tecnologia e Dice não distingue hábito de redação de hábito da língua. Exigir 2 portais distintos custa 304 dos 3025 termos, e lê-los mostra o que são: `reprodução`, `siga`, `participe`, `23h00`, `fotos`, `nublado`. É o mesmo teste que o onboarding usa, pelo mesmo motivo.
+
+**Verbo de chamada é entulho mesmo aparecendo em todo portal.** Sobraram `favorite`, `acompanhar`, `perca`, `notícia`, que todo portal usa igual. Frequência não separa: `notícia` está em 3.8% do corpus e `lula` em 4.1%; `favorite` em 0.3% e `samsung` em 0.2%. O que separa é a categoria, e ela é a mesma de `leia`, que o normalizador já descarta. Os termos entraram em `CHROME`, e a co-ocorrência aplica a mesma lista, porque `article_terms` guarda o que o normalizador decidiu na chegada e mudar a lista sozinha só afetaria artigo futuro.
+
+Amostra aleatória depois dos dois filtros: `milhar` → migratório, ceuta, marrocos, imigrante; `liminar` → protocolar, concessão, legislativo; `atmosfera` → terrestre, estrela; `barato` → gb, tela, acessível, samsung. A polissemia continua aparecendo, `caneta` puxa tanto acessório quanto SUS, e é a fraqueza conhecida do saco de lemas.
+
 ## Fórmula de ranking
 
 ```
@@ -381,8 +395,10 @@ Isso não é defeito de implementação, é o comportamento correto de um recome
 
 Por isso o estado absorvente é tratado explicitamente:
 
-- **Slots de descoberta.** Uma fração dos slots é reservada a itens de alta qualidade e baixa afinidade, marcados com selo próprio no card.
-- **Controle do usuário.** A fração é um slider, de bolha até descoberta, guardado em `users.discovery_ratio`.
+- **Slots de descoberta.** Uma fração dos slots é reservada a itens de alta qualidade e baixa afinidade, marcados com selo próprio no card. **Qualidade é cobertura entre portais**, o mesmo sinal do onboarding: não depende de popularidade de leitor, o que importa porque o Notle implementa só o modelo de gosto e a ausência de sinal de popularidade é posição de projeto. **Baixa afinidade é cosseno abaixo de 0.011**, que foi a mediana medida entre perfil e candidato, ou seja um candidato sobre o qual o ranking não tem opinião.
+
+  Os slots são **intercalados a passo fixo**, não empilhados no fim. Juntos no rodapé viram seção que o leitor aprende a pular, o que falha do mesmo jeito que não reservar. Quando não há candidato elegível o slot volta para o ranking: promessa de descoberta não é motivo para mostrar notícia pior. Contra o feed ao vivo, slider em 0.25 devolve 6 de 24 cards nas posições 4, 8, 12, 16, 20 e 24.
+- **Controle do usuário.** A fração é um slider, de bolha até descoberta, guardado em `users.discovery_ratio`, com teto de 0.5. Acima disso o feed deixa de ser ordenado por gosto, o que é outro produto e não um ajuste mais forte deste.
 - **Entropia visível.** A entropia do `term_vector` é uma medida direta de concentração de gosto, e é exibida como diagnóstico: "seu feed está concentrado em 3 temas".
 
 ## Desempenho, cache e percepção de carregamento

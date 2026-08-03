@@ -18,7 +18,7 @@ arithmetic of the position rather than a story assembled afterwards.
 
 import json
 
-from api import profile, session
+from api import expand, profile, session
 from api.db import query
 from ranking.score import age_in_hours, rejection, repetition, score, similarity
 from ranking.vectors import norm, strongest
@@ -35,6 +35,23 @@ PAGE = 24
 # How many terms of a card's reason are worth showing. More than three stops
 # being a reason and starts being a dump.
 REASONS = 3
+
+# Below this affinity a story is not something the reader's profile asked for,
+# which is what makes it eligible for a discovery slot.
+#
+# Read off the measured distribution: the median profile to candidate cosine on
+# the live window was 0.011 and the ninetieth percentile 0.044. A candidate under
+# the median is one the ranking has no opinion about, and those are exactly the
+# ones the absorbing state would otherwise never surface.
+DISCOVERY_CEILING = 0.011
+
+# How many portals have to have run a story before it can take a reserved slot.
+#
+# The same signal the onboarding uses, and for the same reason. A slot spent on
+# something obscure teaches the reader to ignore the badge, and coverage is the
+# corpus's own answer to what counted as news, with no popularity signal
+# involved. The architecture is explicit that this product models taste only.
+DISCOVERY_SOURCES = 2
 
 
 
@@ -94,12 +111,72 @@ async def contributions(
 
 
 async def candidates(env) -> list[dict]:
-    """The window the ingestion published, ordered so a tie falls to the fresher."""
+    """The window the ingestion published, ordered so a tie falls to the fresher.
+
+    `sources` comes along because a discovery slot needs it, and joining it here
+    costs one aggregate over rows the query already walks. Asking separately
+    would mean a second pass over the same window to answer a question about the
+    same rows.
+    """
     return await query(
         env,
-        "SELECT cluster_id, base_score, norm, published_at, top_terms "
-        "FROM feed_candidates ORDER BY base_score DESC",
+        "SELECT f.cluster_id, f.base_score, f.norm, f.published_at, f.top_terms, "
+        "(SELECT COUNT(DISTINCT a.source_id) FROM articles a "
+        " WHERE a.cluster_id = f.cluster_id) AS sources "
+        "FROM feed_candidates f ORDER BY f.base_score DESC",
     )
+
+
+def interleave(everything, ratio: float, offset: int, size: int = PAGE):
+    """One page, with a share of its slots reserved for what the profile ignored.
+
+    Without this the feed is an absorbing state, and that is arithmetic rather
+    than an opinion: a subject never touched scores near zero, so it never rises,
+    so it is never shown, so it can never be liked, so it never enters the
+    profile. After twenty interactions the thing converges and becomes a mirror
+    that only gets sharper. Boyd's word for what that produces is zemblanity,
+    predictable and worthless encounters arising from a model, and Santini gives
+    it as the opposite of serendipity.
+
+    A slot is filled by the best candidate the profile has no opinion about,
+    which means low affinity and enough coverage to be worth the slot. When there
+    is nothing eligible the slot goes back to the ranking rather than staying
+    empty: a promise of discovery is not a reason to show worse news.
+
+    Interleaved at a fixed stride rather than appended, so the reserved slots are
+    spread through the page. Collected at the end they would be a section the
+    reader learns to skip, which is the same failure as not reserving them.
+    """
+    if ratio <= 0:
+        return everything[offset : offset + size]
+
+    every = max(2, round(1 / ratio))
+    eligible = [
+        card
+        for card in everything
+        if card["similarity"] < DISCOVERY_CEILING
+        and card["sources"] >= DISCOVERY_SOURCES
+    ]
+
+    ordinary = [card for card in everything if card not in eligible]
+    page = []
+    taken = offset // every
+
+    ranked_at = offset - taken
+    surprises = iter(eligible[taken:])
+    usual = iter(ordinary[ranked_at:])
+
+    while len(page) < size:
+        position = offset + len(page)
+        pick = next(surprises, None) if position % every == every - 1 else None
+        if pick is None:
+            pick = next(usual, None)
+        if pick is None:
+            break
+
+        page.append({**pick, "discovery": pick in eligible})
+
+    return page
 
 
 def rank(
@@ -115,6 +192,9 @@ def rank(
     session=None,
     session_norm=0.0,
     session_weight=0.0,
+    adjacent=None,
+    adjacent_norm=0.0,
+    discovery_ratio=0.0,
 ) -> list[dict]:
     """One page of what `scored` produced.
 
@@ -135,8 +215,10 @@ def rank(
         session,
         session_norm,
         session_weight,
+        adjacent,
+        adjacent_norm,
     )
-    return everything[offset : offset + PAGE]
+    return interleave(everything, discovery_ratio, offset)
 
 
 def scored(
@@ -151,6 +233,8 @@ def scored(
     session=None,
     session_norm=0.0,
     session_weight=0.0,
+    adjacent=None,
+    adjacent_norm=0.0,
 ) -> list[dict]:
     """Scores every candidate and returns all of them, best first.
 
@@ -169,6 +253,7 @@ def scored(
     avoided = avoided or {}
     shown = shown or {}
     session = session or {}
+    adjacent = adjacent or {}
     ranked = []
 
     for row in rows:
@@ -191,6 +276,9 @@ def scored(
         affinity = similarity(sum(terms.values()), profile_norm, row["norm"])
         penalty = rejection(similarity(sum(against.values()), avoided_norm, row["norm"]))
         momentum = similarity(sum(current.values()), session_norm, row["norm"])
+        nearby = similarity(
+            sum(adjacent.get(cluster_id, {}).values()), adjacent_norm, row["norm"]
+        )
         age = age_in_hours(row["published_at"], now)
 
         # A resemblance the ranking refused to act on is one the card must not
@@ -204,12 +292,16 @@ def scored(
         ranked.append(
             {
                 "cluster_id": cluster_id,
-                "score": score(affinity, age, penalty, momentum, session_weight)
+                "score": score(
+                    affinity, age, penalty, momentum, session_weight, nearby
+                )
                 * damping,
                 "similarity": affinity,
                 "penalty": penalty,
                 "momentum": momentum,
+                "nearby": nearby,
                 "shown": seen,
+                "sources": row.get("sources", 1),
                 "age_hours": age,
                 "because": [term for term, _ in sorted(terms.items(), key=_by_weight)][:REASONS],
                 "against": blamed,
@@ -314,6 +406,7 @@ async def build(
     shown=None,
     session_vector=None,
     session_clusters=None,
+    discovery_ratio=0.0,
 ) -> list[dict]:
     """One page of one reader's feed, from stored profiles to finished cards.
 
@@ -331,9 +424,16 @@ async def build(
     avoided, avoided_idf = await profile.weighted(env, negative_vector, total_docs)
     current, current_idf = await profile.weighted(env, session_vector or {}, total_docs)
 
+    # The reader's adjacent subjects, built from the corpus's own co-occurrence
+    # rather than from anybody else's behaviour. Skipped entirely for a visitor
+    # who has said nothing, which is the common path.
+    reach = await expand.build(env, profile_vector) if profile_vector else {}
+    nearby, nearby_idf = await profile.weighted(env, reach, total_docs)
+
     matched = await contributions(env, weighted, kept_idf) if weighted else {}
     against = await contributions(env, avoided, avoided_idf) if avoided else {}
     momentum = await contributions(env, current, current_idf) if current else {}
+    adjacent = await contributions(env, nearby, nearby_idf) if nearby else {}
 
     page = rank(
         await candidates(env),
@@ -348,6 +448,9 @@ async def build(
         momentum,
         norm(current),
         session.weight(session_clusters or []),
+        adjacent,
+        norm(nearby),
+        discovery_ratio,
     )
 
     return await decorate(env, page)

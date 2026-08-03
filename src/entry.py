@@ -86,7 +86,16 @@ async def read_feed(request, env):
     )
 
     cards = await feed.build(
-        env, stored, avoided, answered, now, offset, shown, current, touched
+        env,
+        stored,
+        avoided,
+        answered,
+        now,
+        offset,
+        shown,
+        current,
+        touched,
+        user["discovery_ratio"],
     )
 
     # The cold start rides along rather than being asked for separately. A
@@ -209,6 +218,38 @@ async def write_onboarding(request, env):
     )
 
 
+async def write_discovery(request, env):
+    """Moves the slider between bubble and discovery.
+
+    The architecture puts this under the reader rather than in a constant, and
+    the reason is Santini's: "it is the user who decides whether the retrieved
+    item is useful". Relevance is not a property of the system, so how much
+    surprise somebody wants is not the system's call.
+    """
+    user, is_new = await users.identify(env, request.headers.get("Cookie"))
+
+    try:
+        body = json.loads(await request.text())
+    except ValueError:
+        return Response.json({"error": "corpo invalido"}, status=400)
+
+    raw = body.get("ratio")
+    if not isinstance(raw, (int, float)) or isinstance(raw, bool) or raw != raw:
+        return Response.json({"error": "ratio invalido"}, status=400)
+
+    # Half the page is the most that can be reserved. Past that the feed stops
+    # being ordered by taste at all, which is a different product rather than a
+    # stronger setting of this one.
+    ratio = min(max(float(raw), 0.0), 0.5)
+    await execute(env, "UPDATE users SET discovery_ratio = ? WHERE id = ?", [ratio, user["id"]])
+
+    headers = dict(PRIVATE)
+    if is_new:
+        headers["Set-Cookie"] = users.set_cookie(user["id"])
+
+    return Response.json({"ok": True, "discovery_ratio": ratio}, headers=headers)
+
+
 async def read_latest(request, env):
     """Everything the corpus holds, newest first, with no ranking at all.
 
@@ -327,6 +368,7 @@ ROUTES = {
     ("GET", "/api/search"): read_search,
     ("POST", "/api/onboarding"): write_onboarding,
     ("POST", "/api/signals"): write_signals,
+    ("POST", "/api/discovery"): write_discovery,
     ("POST", "/api/interactions"): record,
 }
 

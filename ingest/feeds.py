@@ -15,6 +15,28 @@ import feedparser
 _TAG = re.compile(r"<[^>]+>")
 _WHITESPACE = re.compile(r"\s+")
 
+# The invitation a portal staples to the end of its own summary. One portal ends
+# 377 of its articles with a variant of "Clique aqui para seguir o canal do g1
+# [city] no WhatsApp", which is why `canal` reached 506 documents and `clique`
+# 446, both above every real subject in the Portuguese corpus.
+#
+# Cut here rather than in the discard list, because the words themselves are not
+# the problem: `whatsapp` names a genuine subject in 10 of its 205 articles, and
+# banning the term to be rid of the other 195 would throw those away too.
+#
+# Scoped to the sentence, and the sentence is what bounds it rather than a
+# character count. A cap looked safer and was not: the clause is not always
+# closed by a full stop, and a cap that runs out mid-word leaves the tail of that
+# word behind as a term. Running to the next terminator instead is correct even
+# when the clause holds two invitations, which is the shape one portal uses.
+_PROMO = re.compile(
+    r"[✅\U0001F4F1\U0001F449\U0001F4E2➡️\s:]*"
+    r"(?:clique aqui|siga o canal|baixe o app|assine a newsletter|"
+    r"veja mais not[íi]cias|leia tamb[ée]m)"
+    r"[^.!?]*[.!?]?",
+    re.IGNORECASE,
+)
+
 # Some portals put the entire article body in <description>. Measured against
 # the live feeds: G1 averages 5690 characters per item and Agencia Brasil 2875,
 # while Folha, BBC, CNN and Poder360 sit between 125 and 343.
@@ -45,7 +67,7 @@ class ArticleDraft:
 
 
 def clean_summary(raw: str | None) -> str:
-    """Strips markup and collapses whitespace.
+    """Strips markup, removes the promotional tail, and collapses whitespace.
 
     Entities are decoded before tags are stripped, so a feed that double
     encodes its markup (`&lt;p&gt;`) loses the tag instead of showing it as
@@ -56,6 +78,7 @@ def clean_summary(raw: str | None) -> str:
 
     text = html.unescape(raw)
     text = _TAG.sub(" ", text)
+    text = _PROMO.sub(" ", text)
     text = _WHITESPACE.sub(" ", text).strip()
 
     if len(text) <= SUMMARY_MAX_CHARS:

@@ -194,4 +194,91 @@ SOURCES = (
         language="en",
     ),
     Source("ZDNET", "https://www.zdnet.com/news/rss.xml", "https://www.zdnet.com", language="en"),
+    # Beats nobody here covered. Security and research were blind spots: the
+    # corpus could not answer a question about a breach or a paper except through
+    # whatever the consumer press happened to repeat.
+    Source(
+        "The Hacker News",
+        "https://feeds.feedburner.com/TheHackersNews",
+        "https://thehackernews.com",
+        language="en",
+    ),
+    Source(
+        "BleepingComputer",
+        "https://www.bleepingcomputer.com/feed/",
+        "https://www.bleepingcomputer.com",
+        language="en",
+    ),
+    Source("Nature", "https://www.nature.com/nature.rss", "https://www.nature.com", language="en"),
+    Source(
+        "Phys.org",
+        "https://phys.org/rss-feed/technology-news/",
+        "https://phys.org",
+        language="en",
+    ),
+    Source(
+        "New Scientist",
+        "https://www.newscientist.com/feed/home/",
+        "https://www.newscientist.com",
+        language="en",
+    ),
+    Source(
+        "Quanta Magazine",
+        "https://api.quantamagazine.org/feed/",
+        "https://www.quantamagazine.org",
+        language="en",
+    ),
+    Source("InfoQ", "https://feed.infoq.com/", "https://www.infoq.com", language="en"),
+    Source(
+        "CNBC Technology",
+        "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=19854910",
+        "https://www.cnbc.com/technology",
+        language="en",
+    ),
+    # Consumer coverage. It overlaps the desks above by design: the ask was for
+    # more English, and this is where the English volume is.
+    Source("9to5Mac", "https://9to5mac.com/feed/", "https://9to5mac.com", language="en"),
+    Source("TechRadar", "https://www.techradar.com/rss", "https://www.techradar.com", language="en"),
+    Source(
+        "MacRumors",
+        "https://feeds.macrumors.com/MacRumors-All",
+        "https://www.macrumors.com",
+        language="en",
+    ),
+    Source(
+        "Digital Trends",
+        "https://www.digitaltrends.com/feed/",
+        "https://www.digitaltrends.com",
+        language="en",
+    ),
+    Source(
+        "XDA Developers",
+        "https://www.xda-developers.com/feed/",
+        "https://www.xda-developers.com",
+        language="en",
+    ),
+    Source("Gizmodo", "https://gizmodo.com/rss", "https://gizmodo.com", language="en"),
+    Source("404 Media", "https://www.404media.co/rss/", "https://www.404media.co", language="en"),
+    Source(
+        "NPR Technology",
+        "https://feeds.npr.org/1019/rss.xml",
+        "https://www.npr.org/sections/technology",
+        language="en",
+    ),
+    # Aggregators, and they are a different kind of thing from everything above.
+    # They do not publish the story, they point at it, so a card that groups one
+    # of them with the portals will say they covered something they only linked.
+    # Added deliberately with that understood.
+    Source(
+        "Hacker News (YC)",
+        "https://hnrss.org/frontpage",
+        "https://news.ycombinator.com",
+        language="en",
+    ),
+    Source(
+        "Slashdot",
+        "https://rss.slashdot.org/Slashdot/slashdotMain",
+        "https://slashdot.org",
+        language="en",
+    ),
 )

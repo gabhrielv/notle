@@ -17,7 +17,7 @@ from urllib.parse import parse_qs, urlparse
 
 from workers import Response
 
-from api import browse, feed, onboarding, profile, signals, users
+from api import browse, feed, onboarding, profile, session, signals, users
 from api.db import execute, query_one
 
 # What a reader is allowed to record. A hide both excludes its own cluster and
@@ -35,6 +35,17 @@ def _params(request) -> dict[str, list[str]]:
 
 def _one(params: dict, name: str, fallback: str = "") -> str:
     return params.get(name, [fallback])[0]
+
+
+def _session(raw) -> str | None:
+    """The tab's id, or nothing.
+
+    Bounded and required to be a string because it reaches a WHERE clause as a
+    bound parameter and lands in a column. Anything else is treated as no
+    session at all, which costs the reader the last few minutes of weighting and
+    nothing else.
+    """
+    return raw if isinstance(raw, str) and 0 < len(raw) <= 64 else None
 
 
 def _offset(params: dict) -> int:
@@ -66,11 +77,16 @@ async def read_feed(request, env):
 
     user, is_new = await users.identify(env, request.headers.get("Cookie"))
 
+    now = datetime.now(UTC)
     stored, avoided = await profile.load(env, user["id"])
     answered = await profile.acted_on(env, user["id"])
     shown = await profile.impressions(env, user["id"])
+    current, touched = await session.build(
+        env, user["id"], _session(_one(params, "session")), now
+    )
+
     cards = await feed.build(
-        env, stored, avoided, answered, datetime.now(UTC), offset, shown
+        env, stored, avoided, answered, now, offset, shown, current, touched
     )
 
     # The cold start rides along rather than being asked for separately. A
@@ -96,6 +112,14 @@ async def read_feed(request, env):
                 "terms": len(stored),
                 "empty": not stored,
                 "hidden_terms": len(avoided),
+            },
+            # What the last few minutes are pulling toward, named only when the
+            # ranking actually gave it a say. Saying a reader is on a run while
+            # the formula weighted that run at nothing would describe a force
+            # that is not acting.
+            "session": {
+                "about": session.leading(current, touched),
+                "weight": round(session.weight(touched), 3),
             },
             "feed": cards,
             # Absent rather than false when the page came back short: the client
@@ -129,15 +153,14 @@ async def write_signals(request, env):
     if not rows:
         return Response.json({"ok": True, "stored": 0}, headers=dict(PRIVATE))
 
-    session = body.get("session_id")
-    session = session if isinstance(session, str) and len(session) <= 64 else None
+    where = _session(body.get("session_id"))
     stamp = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     values = ", ".join(["(?, ?, ?, ?, ?, ?, ?)"] * len(rows))
     params = [
         value
         for kind, cluster_id, weight, duration in rows
-        for value in (user["id"], cluster_id, session, kind, weight, duration, stamp)
+        for value in (user["id"], cluster_id, where, kind, weight, duration, stamp)
     ]
     await execute(
         env,
@@ -265,13 +288,20 @@ async def record(request, env):
     if known is None:
         return Response.json({"error": "cluster inexistente"}, status=404)
 
+    # The session id rides along so an explicit signal counts toward the last
+    # few minutes as well as toward the profile. A like inside a run about one
+    # subject is the strongest evidence the run is real, and leaving it out of
+    # the session vector would be reading the weakest signals and not the
+    # loudest one.
     await execute(
         env,
-        "INSERT INTO interactions (user_id, cluster_id, type, value, created_at) "
-        "VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO interactions "
+        "(user_id, cluster_id, session_id, type, value, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
         [
             user["id"],
             cluster_id,
+            _session(body.get("session_id")),
             kind,
             profile.WEIGHTS.get(kind, 1.0),
             datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),

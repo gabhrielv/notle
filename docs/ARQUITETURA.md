@@ -233,6 +233,26 @@ Duas travas obrigatórias nele:
 - **Morre com a sessão.** Se vazasse pro perfil longo, uma tarde curiosa sobre futebol viraria identidade permanente.
 - **Peso adaptativo com teto de 0.35.** `w_sessao` cresce com a concentração do vetor de sessão e para no teto. Navegação dispersa zera o peso sozinha; maratona num tema liga ele. Sem teto, três toques em esportes convertem o resto da sessão inteira em esportes, porque o próprio reforço gera mais engajamento que aumenta o reforço. É o mesmo laço vicioso da impressão, rodando em minutos em vez de semanas.
 
+### O que "concentração" tinha que ser
+
+A palavra escondia o mesmo tipo de problema que "variados" escondeu no onboarding. A primeira medida tentada foi **entropia normalizada do vetor de sessão**, pelo argumento de que ela mede o quanto um gosto está espalhado. Medida contra três sessões reais do corpus:
+
+| | entropia | maior fatia | **cosseno médio entre os clusters** |
+|---|---|---|---|
+| focada, Lula/convenção em 3 portais | 0.0584 | 0.0701 | **0.2871** |
+| dispersa, futebol + festival + saúde | 0.0589 | 0.0492 | **0.0682** |
+| mista, dois iguais e um solto | 0.0327 | 0.0373 | **0.0976** |
+
+Entropia **não separa nada**: focada e dispersa empatam, e o caso misto marca *menos* que os dois extremos, ou seja a ordem inverte. O motivo é simples depois de visto: três artigos inteiros carregam uns 80 termos seja qual for o assunto, então a forma daquele vetor quase não diz se eles falavam da mesma coisa.
+
+O que diz é **o quanto os clusters da sessão se parecem entre si**, que também é o que "maratona num tema" significa em português. Separa 4.2 vezes e ordena o caso misto no meio.
+
+A rampa vai de `0.05`, o piso de ruído medido, até `0.30`, onde a sessão focada real caiu. Contra o feed ao vivo: sessão dispersa devolve peso **0.0**, sessão focada devolve **0.332**, que é 95% do teto, e nomeia o assunto na tela.
+
+Custo: `O(n²)` cossenos com `n` sendo os clusters da sessão, que na prática são menos de dez, e a janela de uma hora descarta o resto.
+
+**Consequência para a fatia 7:** a entropia estava planejada para aparecer na tela como diagnóstico do perfil longo. Ela foi removida do código por não ter uso, e antes de voltar precisa ser medida contra perfis longos reais, porque acabou de falhar em fazer exatamente esse trabalho na sessão.
+
 **Expansão por co-ocorrência substitui filtragem colaborativa.** Filtragem colaborativa está estruturalmente bloqueada aqui por dois motivos independentes. Primeiro, usuários anônimos num demo de portfólio significam uma população de dezenas de pessoas e uma matriz usuário/item com mais de 99% de células vazias, o que produz coincidência e não recomendação. Segundo, e isso valeria mesmo com um milhão de usuários: **notícia morre em 48 horas**, e colaborativa item-item precisa acumular co-ocorrência ao longo do tempo. Quando o acúmulo termina, o artigo já é lixo histórico. É por isso que sistema de notícia de verdade não faz colaborativa no nível da matéria.
 
 A substituição usa o próprio corpus como população: se `selic` co-ocorre com `câmbio` e `inflação` em milhares de artigos, o perfil expande pra vizinhos que o usuário nunca tocou. Entrega o efeito de descoberta de interesse adjacente, continua explicável ("quem acompanha Selic costuma acompanhar câmbio"), e não depende de multidão nenhuma. **Não é filtragem colaborativa, e o texto não a chama assim.**

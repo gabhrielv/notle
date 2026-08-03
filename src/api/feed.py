@@ -18,7 +18,7 @@ arithmetic of the position rather than a story assembled afterwards.
 
 import json
 
-from api import profile
+from api import profile, session
 from api.db import query
 from ranking.score import age_in_hours, rejection, repetition, score, similarity
 from ranking.vectors import norm, strongest
@@ -112,6 +112,9 @@ def rank(
     avoided_norm=0.0,
     offset=0,
     shown=None,
+    session=None,
+    session_norm=0.0,
+    session_weight=0.0,
 ) -> list[dict]:
     """One page of what `scored` produced.
 
@@ -121,7 +124,17 @@ def rank(
     two is the same list page one came from, further down.
     """
     everything = scored(
-        rows, matched, profile_norm, answered, now, avoided, avoided_norm, shown
+        rows,
+        matched,
+        profile_norm,
+        answered,
+        now,
+        avoided,
+        avoided_norm,
+        shown,
+        session,
+        session_norm,
+        session_weight,
     )
     return everything[offset : offset + PAGE]
 
@@ -135,6 +148,9 @@ def scored(
     avoided=None,
     avoided_norm=0.0,
     shown=None,
+    session=None,
+    session_norm=0.0,
+    session_weight=0.0,
 ) -> list[dict]:
     """Scores every candidate and returns all of them, best first.
 
@@ -152,6 +168,7 @@ def scored(
     """
     avoided = avoided or {}
     shown = shown or {}
+    session = session or {}
     ranked = []
 
     for row in rows:
@@ -169,8 +186,11 @@ def scored(
         terms = matched.get(cluster_id, {})
         against = avoided.get(cluster_id, {})
 
+        current = session.get(cluster_id, {})
+
         affinity = similarity(sum(terms.values()), profile_norm, row["norm"])
         penalty = rejection(similarity(sum(against.values()), avoided_norm, row["norm"]))
+        momentum = similarity(sum(current.values()), session_norm, row["norm"])
         age = age_in_hours(row["published_at"], now)
 
         # A resemblance the ranking refused to act on is one the card must not
@@ -184,9 +204,11 @@ def scored(
         ranked.append(
             {
                 "cluster_id": cluster_id,
-                "score": score(affinity, age, penalty) * damping,
+                "score": score(affinity, age, penalty, momentum, session_weight)
+                * damping,
                 "similarity": affinity,
                 "penalty": penalty,
+                "momentum": momentum,
                 "shown": seen,
                 "age_hours": age,
                 "because": [term for term, _ in sorted(terms.items(), key=_by_weight)][:REASONS],
@@ -283,7 +305,15 @@ async def decorate(env, ranked: list[dict]) -> list[dict]:
 
 
 async def build(
-    env, profile_vector, negative_vector, answered, now, offset=0, shown=None
+    env,
+    profile_vector,
+    negative_vector,
+    answered,
+    now,
+    offset=0,
+    shown=None,
+    session_vector=None,
+    session_clusters=None,
 ) -> list[dict]:
     """One page of one reader's feed, from stored profiles to finished cards.
 
@@ -299,9 +329,11 @@ async def build(
 
     weighted, kept_idf = await profile.weighted(env, profile_vector, total_docs)
     avoided, avoided_idf = await profile.weighted(env, negative_vector, total_docs)
+    current, current_idf = await profile.weighted(env, session_vector or {}, total_docs)
 
     matched = await contributions(env, weighted, kept_idf) if weighted else {}
     against = await contributions(env, avoided, avoided_idf) if avoided else {}
+    momentum = await contributions(env, current, current_idf) if current else {}
 
     page = rank(
         await candidates(env),
@@ -313,6 +345,9 @@ async def build(
         norm(avoided),
         offset,
         shown,
+        momentum,
+        norm(current),
+        session.weight(session_clusters or []),
     )
 
     return await decorate(env, page)

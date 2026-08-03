@@ -1,6 +1,8 @@
 """Turns affinity and age into a position in the feed.
 
-    score = (W_GOSTO * cosine(profile, cluster) + W_RECENCIA) * decay(age)
+    score = (W_GOSTO  * cosine(profile,         cluster)
+            + W_SESSAO * cosine(session_profile, cluster)   # adaptativo, teto 0.35
+            + W_RECENCIA) * decay(age)
             - BETA * cosine(negative_profile, cluster)
 
 The recency floor sits inside the decay rather than beside it, and that is the
@@ -198,15 +200,29 @@ def rejection(negative_cosine: float) -> float:
     return negative_cosine if negative_cosine >= NEGATIVE_FLOOR else 0.0
 
 
-def score(similarity_value: float, age_hours: float, penalty: float = 0.0) -> float:
+def score(
+    similarity_value: float,
+    age_hours: float,
+    penalty: float = 0.0,
+    session_value: float = 0.0,
+    session_weight: float = 0.0,
+) -> float:
     """Where a candidate lands: how well it matches, how old it is, what it recalls.
 
     `penalty` is the cosine against the reader's negative profile, in [0, 1],
-    already through `rejection`. It defaults to zero because most visitors have
-    hidden nothing, and that path should read as the same expression with one
-    term absent rather than as a branch.
+    already through `rejection`. `session_value` is the cosine against the last
+    few minutes and `session_weight` how much this session has earned the right
+    to say. All three default to zero because most requests carry none of them,
+    and those paths should read as the same expression with terms absent rather
+    than as branches.
+
+    The session term sits inside the decay with the long profile rather than
+    beside it. A story the reader is on a run about still has to be news: an
+    afternoon of reading about one subject must not resurface something from two
+    days ago simply because it matches.
     """
-    return (W_GOSTO * similarity_value + W_RECENCIA) * decay(age_hours) - BETA * penalty
+    taste = W_GOSTO * similarity_value + session_weight * session_value
+    return (taste + W_RECENCIA) * decay(age_hours) - BETA * penalty
 
 
 def age_in_hours(published_at: str, now: datetime) -> float:

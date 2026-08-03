@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react'
 import { sendSignals } from './api'
+import { sessionId } from './session'
 import type { SignalEvent } from './api'
 
 /** How long a batch may sit before it goes, so a quiet reader is still recorded. */
@@ -29,7 +30,7 @@ const SEEN_FOR_MS = 1000
  */
 export function useSignals(active: boolean) {
   const queue = useRef<SignalEvent[]>([])
-  const session = useRef(crypto.randomUUID())
+  const session = useRef(sessionId())
   // What the reader clicked through to, and when. Kept in a ref because the
   // answer arrives in a visibility event that has no idea a click happened.
   const away = useRef<{ cluster: number; left: number } | null>(null)

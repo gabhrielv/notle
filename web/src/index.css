@@ -403,6 +403,33 @@ body::before {
   color: var(--ink);
 }
 
+/* The one line that describes something happening right now rather than
+   something stored. It borrows the accent because a run is temporary and the
+   reader should be able to tell at a glance that this is not their profile. */
+.run {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 1rem 0 0;
+  font-size: 0.85rem;
+  color: var(--ink-2);
+}
+
+.run b {
+  font-family: var(--mono);
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.run-label {
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--reg);
+}
+
 /* ---------- cards ---------- */
 
 .feed {

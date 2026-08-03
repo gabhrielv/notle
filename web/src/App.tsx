@@ -203,6 +203,7 @@ function FeedView() {
   const [profile, setProfile] = useState<Feed['profile'] | null>(null)
   const [isNew, setIsNew] = useState(false)
   const [cold, setCold] = useState<Feed['onboarding'] | null>(null)
+  const [run, setRun] = useState<Feed['session'] | null>(null)
   // Bumped when the cold start is answered, so the list reloads against the
   // profile that answer just created rather than the empty one behind it.
   const [generation, setGeneration] = useState(0)
@@ -211,6 +212,7 @@ function FeedView() {
     const page = await readFeed(offset, signal)
     setProfile(page.profile)
     setIsNew(page.user.is_new)
+    setRun(page.session)
     if (offset === 0) setCold(page.onboarding)
     return page
   }, [])
@@ -240,6 +242,12 @@ function FeedView() {
             : `${profile.terms} termos de gosto, ${profile.hidden_terms} escondidos`
           : 'lendo a janela'}
       </p>
+      {run?.about && (
+        <p className="run">
+          <span className="run-label">agora</span> você está numa sequência sobre{' '}
+          <b>{run.about}</b>
+        </p>
+      )}
       {isNew && (
         <p className="hint">
           Interessa e ocultar ensinam o feed. A matéria sai da lista e o próximo

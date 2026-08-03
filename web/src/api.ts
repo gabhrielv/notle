@@ -43,6 +43,11 @@ export type Feed = Page & {
   user: { is_new: boolean; discovery_ratio: number }
   profile: { terms: number; empty: boolean; hidden_terms: number }
   /**
+   * What the last few minutes are pulling toward, named only when the ranking
+   * actually gave it a say. `about` is null when the reading was scattered.
+   */
+  session: { about: string | null; weight: number }
+  /**
    * The cold start, carried by the feed response rather than fetched on its own.
    *
    * A visitor who has answered nothing is the one this screen has to be fastest
@@ -58,6 +63,8 @@ export type Latest = Page & {
 }
 
 export type Search = Page & { query: string }
+
+import { sessionId } from './session'
 
 export type Signal = 'like' | 'hide'
 
@@ -108,7 +115,7 @@ async function read<T>(path: string, signal?: AbortSignal): Promise<T> {
 }
 
 export function readFeed(offset: number, signal?: AbortSignal): Promise<Feed> {
-  return read(`/api/feed?offset=${offset}`, signal)
+  return read(`/api/feed?offset=${offset}&session=${sessionId()}`, signal)
 }
 
 export function readLatest(
@@ -143,7 +150,7 @@ export async function record(cluster: number, type: Signal): Promise<void> {
   const response = await fetch('/api/interactions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ cluster_id: cluster, type }),
+    body: JSON.stringify({ cluster_id: cluster, type, session_id: sessionId() }),
   })
   if (!response.ok) {
     throw new Error(`interacao respondeu ${response.status}`)

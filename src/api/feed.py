@@ -36,6 +36,38 @@ PAGE = 24
 # being a reason and starts being a dump.
 REASONS = 3
 
+# How much of a summary the card shows.
+#
+# What the feeds call a summary is not one thing. Measured across the corpus,
+# The Register averages 84 characters and Engadget 113, while G1, Canaltech,
+# IEEE and Agencia Brasil all sit at 595, which is the 600 character cap doing
+# its work on what is really the article's body.
+#
+# Shown whole, half the sources would give a sentence and the other half seven
+# lines of a paragraph cut mid word, and the card's height would encode which
+# portal published it rather than what the story is. Clamped here, ten of the
+# twenty sources pass through untouched and the rest are cut to the same shape.
+#
+# Clamped on the server rather than with CSS, because the client reports how much
+# text was on screen so a dwell can be normalized by it, and text hidden by an
+# overflow rule would inflate that number with words nobody read.
+SUMMARY_CHARS = 220
+
+
+def shorten(text: str, limit: int = SUMMARY_CHARS) -> str:
+    """A summary cut to a readable length, on a word boundary.
+
+    Mid word is worse than short: the reader sees a fragment and the ellipsis
+    lands inside a name.
+    """
+    text = (text or "").strip()
+    if len(text) <= limit:
+        return text
+
+    cut = text[:limit]
+    boundary = cut.rfind(" ")
+    return (cut[:boundary] if boundary > 0 else cut).rstrip(" ,;:") + "…"
+
 # Below this affinity a story is not something the reader's profile asked for,
 # which is what makes it eligible for a discovery slot.
 #
@@ -345,8 +377,8 @@ async def decorate(env, ranked: list[dict]) -> list[dict]:
     # ranking window simply has no row there and no kicker.
     anchors = await query(
         env,
-        "SELECT c.id AS cluster_id, c.size, a.title, a.url, a.published_at, "
-        "s.name AS source, f.top_terms AS top_terms "
+        "SELECT c.id AS cluster_id, c.size, a.title, a.summary, a.url, "
+        "a.published_at, s.name AS source, f.top_terms AS top_terms "
         "FROM clusters c "
         "JOIN articles a ON a.id = c.representative_article_id "
         "JOIN sources s ON s.id = a.source_id "
@@ -385,6 +417,7 @@ async def decorate(env, ranked: list[dict]) -> list[dict]:
                 "about": _parse_terms(anchor["top_terms"]),
                 **card,
                 "title": anchor["title"],
+                "summary": shorten(anchor["summary"]),
                 "url": anchor["url"],
                 "source": anchor["source"],
                 "published_at": anchor["published_at"],

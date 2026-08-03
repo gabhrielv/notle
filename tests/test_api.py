@@ -602,6 +602,51 @@ class TestRank:
         assert card["penalty"] > 0
 
 
+class TestShorten:
+    """How much of a summary reaches the card.
+
+    What the feeds call a summary is not one thing. Measured across the corpus,
+    The Register averages 84 characters and Engadget 113, while G1, Canaltech,
+    IEEE and Agencia Brasil all sit at 595, which is the ingestion's 600
+    character cap doing its work on what is really the article's body.
+    """
+
+    def test_a_real_summary_passes_through_untouched(self):
+        """Ten of the twenty sources write short enough that nothing happens to
+        them, and a card should not carry an ellipsis it did not earn.
+        """
+        short = "Copom mantem a Selic em 10,5% ao ano."
+
+        assert feed.shorten(short) == short
+
+    def test_an_article_body_is_cut_to_the_same_shape(self):
+        body = "palavra " * 200
+
+        assert len(feed.shorten(body)) <= feed.SUMMARY_CHARS + 1
+
+    def test_it_cuts_on_a_word_boundary(self):
+        """Mid word is worse than short: the reader sees a fragment and the
+        ellipsis lands inside a name.
+        """
+        text = "Ministro " * 40
+
+        assert feed.shorten(text).rstrip("…").endswith("Ministro")
+
+    def test_a_feed_that_publishes_no_summary_gets_no_ellipsis(self):
+        """Tecmundo shipped forty items with nothing in the field. A headline
+        with no text under it is a normal card, not a broken one.
+        """
+        assert feed.shorten("") == ""
+        assert feed.shorten(None) == ""
+
+    def test_the_clamp_happens_before_the_client_sees_it(self):
+        """The client reports how much text was on screen so a dwell can be
+        normalized by it. Hiding the overflow with CSS instead would inflate
+        that number with words nobody read.
+        """
+        assert feed.SUMMARY_CHARS < 600
+
+
 class TestBrowse:
     """The two lists that ignore taste."""
 

@@ -500,10 +500,10 @@ body::before {
   }
 }
 
-/* Spans every row the card body can produce: kicker, headline, byline, the
-   source plates, the reasons and the actions. */
+/* Spans every row the card body can produce: kicker, headline, summary,
+   byline, the source plates, the reasons and the actions. */
 .gutter {
-  grid-row: 1 / span 6;
+  grid-row: 1 / span 7;
   padding-top: 0.35rem;
 }
 
@@ -552,6 +552,18 @@ body::before {
 
 .headline a:hover {
   background-size: 100% 1px;
+}
+
+.summary {
+  margin: 0.6rem 0 0;
+  max-width: 34rem;
+  font-size: 0.92rem;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+
+.card.is-lead .summary {
+  font-size: 1rem;
 }
 
 .byline {

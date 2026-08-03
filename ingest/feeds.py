@@ -68,6 +68,29 @@ def clean_summary(raw: str | None) -> str:
     return cut[:boundary].strip() if boundary > 0 else cut.strip()
 
 
+def _summary_of(entry) -> str:
+    """The entry's text, wherever this feed decided to put it.
+
+    `description` is where almost every portal writes it, and Tecmundo writes
+    nothing there at all: its forty items arrived with empty summaries until
+    `content` was checked, which is where its text actually lives. A card with a
+    headline and no text is a card that lost a third of what it had to say, and
+    the article's terms lose the whole body with it.
+    """
+    for value in (entry.get("summary"), entry.get("description")):
+        cleaned = clean_summary(value)
+        if cleaned:
+            return cleaned
+
+    # feedparser hands `content` back as a list of alternatives, richest first.
+    for block in entry.get("content") or ():
+        cleaned = clean_summary(block.get("value"))
+        if cleaned:
+            return cleaned
+
+    return ""
+
+
 def _published_at(entry, now: datetime) -> str:
     """feedparser already normalizes the parsed time to UTC.
 
@@ -99,7 +122,7 @@ def parse_feed(
         if not title:
             continue
 
-        summary = clean_summary(entry.get("summary") or entry.get("description"))
+        summary = _summary_of(entry)
         drafts.append(
             ArticleDraft(source_id, title, summary, url, _published_at(entry, now), language)
         )

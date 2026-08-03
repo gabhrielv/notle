@@ -122,9 +122,14 @@ export function Card({
   onSeen,
   onOpen,
 }: Props) {
+  // What the reader actually had in front of them, which is what a dwell is
+  // normalized by. Headline plus summary, because both are rendered; counting
+  // only the headline would say a card with three lines of text under it was
+  // read as fast as one without.
+  const shown = card.title.length + card.summary.length
   const report = useCallback(
-    (visibleMs: number) => onSeen(card.cluster_id, visibleMs, card.title.length),
-    [onSeen, card.cluster_id, card.title.length],
+    (visibleMs: number) => onSeen(card.cluster_id, visibleMs, shown),
+    [onSeen, card.cluster_id, shown],
   )
   const ref = useOnScreen(report)
 
@@ -169,6 +174,8 @@ export function Card({
           {card.title}
         </a>
       </h2>
+
+      {card.summary && <p className="summary">{card.summary}</p>}
 
       <p className="byline">
         <b>{card.source}</b> · {sayAge(card.published_at)}

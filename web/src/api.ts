@@ -9,6 +9,13 @@
 export type Card = {
   cluster_id: number
   title: string
+  /**
+   * The anchor's summary, already clamped by the server.
+   *
+   * Empty for a feed that publishes none. The card has to survive that: a
+   * headline with no text under it is a normal card, not a broken one.
+   */
+  summary: string
   url: string
   source: string
   published_at: string

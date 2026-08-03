@@ -48,6 +48,12 @@ CONTENT_POS = frozenset({"NOUN", "PROPN", "ADJ", "VERB"})
 LIGHT_VERBS = frozenset(
     {
         "ser",
+        # Headline verb. Across eight articles carrying it, not one is about
+        # choosing: an indigenous lawyer takes over a programme, a party makes
+        # its candidate official, Lula speaks for 62 minutes. It reached the
+        # strongest terms of a seeded profile and made the card tell a reader
+        # they follow "choosing", which is the failure this list exists to stop.
+        "escolher",
         "estar",
         "ter",
         "haver",

@@ -2,12 +2,14 @@
   "name": "notle",
   "private": true,
   "type": "module",
+  "packageManager": "pnpm@11.18.0",
   "scripts": {
     "build": "pnpm --dir web build",
     "dev": "pnpm build && wrangler dev",
     "deploy": "pnpm build && wrangler deploy",
-    "migrate:local": "wrangler d1 execute notle --local --file=migrations/0001_initial.sql",
-    "migrate:remote": "wrangler d1 execute notle --remote --file=migrations/0001_initial.sql"
+    "migrate": "wrangler d1 migrations apply notle --remote",
+    "migrate:local": "wrangler d1 migrations apply notle --local",
+    "migrate:list": "wrangler d1 migrations list notle --remote"
   },
   "devDependencies": {
     "wrangler": "^4.116.0"

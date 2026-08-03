@@ -627,7 +627,7 @@ Quatro workflows, e nenhum passo que dependa de alguém ter o `wrangler` instala
 
 | Workflow | Quando | O que faz |
 |---|---|---|
-| `ingest` | de hora em hora, aos :17 | lê os feeds, clusteriza, materializa `feed_candidates` e o onboarding |
+| `ingest` | duas vezes por hora, aos :17 e :47 | lê os feeds, clusteriza, materializa `feed_candidates` e o onboarding |
 | `cooccurrence` | domingo às 4:40 | recalcula `term_cooccur` sobre o acervo, e só então poda `article_terms` |
 | `deploy` | a cada push na main | testa, linta, **aplica migrations** e sobe o Worker |
 | `reprocess` | só à mão | re-lematiza o acervo sob as regras de hoje |
@@ -635,6 +635,21 @@ Quatro workflows, e nenhum passo que dependa de alguém ter o `wrangler` instala
 Os três que escrevem no corpus dividem o mesmo grupo de concorrência. Duas passadas simultâneas deixariam `terms.doc_count` contando um corpus que nenhuma das duas viu.
 
 **As migrations são aplicadas antes do deploy, nunca depois.** A ordem inversa é a que põe um Worker novo na frente de um schema velho e produz erro de coluna inexistente em produção. As cinco primeiras foram aplicadas à mão antes deste workflow existir e estão registradas em `d1_migrations`, então a sexta sobe por comando.
+
+**"De hora em hora" é o que se pede, não o que chega.** Medido sobre 31 execuções agendadas, todas bem-sucedidas:
+
+| intervalo entre passadas | |
+|---|---|
+| mínimo | 58 min |
+| **mediana** | **96 min** |
+| máximo | 221 min |
+| dentro de 70 min | 9 de 30 |
+
+Agendamento no GitHub Actions é melhor esforço e a fila é descartada sob carga, então um `cron` horário entrega mediana de uma hora e meia e às vezes some por quase quatro horas. Nada falha; a execução simplesmente não acontece.
+
+A mitigação é pedir duas vezes por hora, aos :17 e :47. Não deixa de ser melhor esforço, mas dobra as chances de uma cair. Custa nada: a passada é idempotente pelo `url UNIQUE`, uma que não acha novidade não escreve e sai em trinta segundos, e o repositório é público, então minuto de Actions é de graça.
+
+**A consequência para o leitor fica registrada:** a matéria mais nova do feed costuma ter entre uma e duas horas, podendo chegar a quatro. Num agregador isso é aceitável e é o preço declarado de não manter worker ligado. O que não seria aceitável é o documento prometer uma hora e a operação entregar quatro sem ninguém ter medido.
 
 **O reprocessamento não tem agenda de propósito.** Ele conserta a discordância entre o que `article_terms` guardou e as regras que o código usa hoje, e essa discordância só aparece quando alguém edita uma lista de descarte. Uma agenda faria minutos de trabalho toda semana para um evento que acontece três vezes por ano.
 

@@ -5,9 +5,20 @@ name: ingest
 # gives away for free.
 on:
   schedule:
-    # Off the hour: every scheduled job in the world fires at :00, and GitHub
-    # delays the queue accordingly.
-    - cron: "17 * * * *"
+    # Two slots an hour, not because the corpus needs it but because GitHub does
+    # not deliver one. Measured over 31 runs of a single hourly cron: median gap
+    # of 96 minutes, worst of 221, and only 9 of 30 gaps inside 70 minutes. A
+    # schedule here is best effort and the queue is dropped under load, so more
+    # scheduled events mean more chances one of them fires.
+    #
+    # It costs nothing to try twice. The run is idempotent, dedup happens on
+    # `url UNIQUE`, and a pass that finds nothing new writes nothing and exits
+    # in about thirty seconds. The repository is public, so Actions minutes are
+    # free.
+    #
+    # Off the round minutes on purpose: every scheduled job in the world fires
+    # at :00, and that is exactly when the queue is worst.
+    - cron: "17,47 * * * *"
   workflow_dispatch:
 
 # A slow run must not overlap the next hour's and double-count the corpus.

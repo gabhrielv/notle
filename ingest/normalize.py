@@ -144,10 +144,38 @@ EN_LIGHT_VERBS = frozenset(
         "use",
         "need",
         "let",
+        # Measured, not guessed. These reached the forty most widespread terms of
+        # the English corpus, above every company name in it: `work` in 24
+        # articles, `call` in 13, `look` in 12. They are the verbs a technology
+        # headline is built from and they name nothing a reader could follow.
+        "look",
+        "seem",
+        "become",
+        "keep",
+        "put",
+        "bring",
+        "try",
+        "find",
+        "help",
+        "show",
+        "turn",
+        "leave",
+        "feel",
+        "add",
+        "start",
+        "call",
+        "work",
+        "mean",
+        "ask",
+        "hold",
     }
 )
 
-EN_REPORTING_VERBS = frozenset({"say", "tell", "report", "announce", "claim", "state"})
+# `accord` is the lemma of "according to", the construction attributed reporting
+# is built on. It names that someone was quoted, never who or about what.
+EN_REPORTING_VERBS = frozenset(
+    {"say", "tell", "report", "announce", "claim", "state", "accord"}
+)
 
 # Chrome the technology press pastes around a story. `read` is the tail of "read
 # more", and weekdays are temporal furniture in any language: nearly every
@@ -164,6 +192,62 @@ EN_CHROME = frozenset(
         "sunday",
         "today",
         "week",
+        # Comparatives and temporal furniture. `new` led the whole English corpus
+        # at 36 articles and `more` reached 22, which is more document spread than
+        # any real subject has. A term that common separates nothing.
+        "new",
+        "more",
+        "most",
+        "first",
+        "last",
+        "next",
+        "late",
+        "early",
+        "good",
+        "bad",
+        "big",
+        "large",
+        "small",
+        "best",
+        "top",
+        "time",
+        "year",
+        "month",
+        "day",
+        "hour",
+        "weekend",
+        "morning",
+        "night",
+        "world",
+        "life",
+        # The commerce the technology press runs beside the story. `coupon`
+        # reached 10 articles on its own, which is a deals widget leaking into a
+        # feature space that is supposed to be about subjects.
+        "coupon",
+        "deal",
+        "discount",
+        "sale",
+        "review",
+        # Invitations to act on the page, the English half of what `leia` and
+        # `acompanhar` cover above.
+        "subscribe",
+        "newsletter",
+        "sign",
+        "follow",
+        "comment",
+        "click",
+        "link",
+        "post",
+        "article",
+        "story",
+        "update",
+        "guide",
+        "roundup",
+        "video",
+        "photo",
+        "image",
+        "editor",
+        "staff",
     }
 )
 
@@ -177,6 +261,21 @@ DISCARDED = {
 # whose part of speech is the preposition's, which the content filter then
 # throws away. Trimming the edge first is what keeps the place name.
 SPAN_EDGE_POS = frozenset({"ADP", "DET"})
+
+# Entity labels that measure rather than name. Merging them produces terms like
+# `august 2026`, which reached the forty most widespread terms of the English
+# corpus by appearing in twelve articles: every story published that month
+# carries it, so it groups the calendar instead of the subject.
+#
+# Listing months would not have fixed it. The span is what the model recognized,
+# and the parts left behind after refusing to merge are still `august` and
+# `2026`, so the tokens have to be dropped by label rather than by spelling.
+#
+# Inert for Portuguese: that model emits only LOC, MISC, ORG and PER, so none of
+# these labels can match and the branch costs a comparison.
+UNTOPICAL_ENTS = frozenset(
+    {"DATE", "TIME", "PERCENT", "MONEY", "QUANTITY", "ORDINAL", "CARDINAL"}
+)
 
 # Short tokens are usually noise, but Brazilian news runs on acronyms: PT, PF,
 # STF, PIB. An all-caps original survives regardless of length.
@@ -230,6 +329,8 @@ def _merge_entities(doc) -> None:
     """
     with doc.retokenize() as retokenizer:
         for entity in doc.ents:
+            if entity.label_ in UNTOPICAL_ENTS:
+                continue
             for span in _segments(entity):
                 while len(span) > 1 and span[0].pos_ in SPAN_EDGE_POS:
                     span = span[1:]
@@ -254,6 +355,10 @@ def lemmatize(text: str, language: str = DEFAULT_LANGUAGE) -> list[str]:
     lemmas = []
     for token in doc:
         if token.pos_ not in CONTENT_POS:
+            continue
+        # Left unmerged above, so the pieces are still here as ordinary proper
+        # nouns and have to be refused by the label they carry.
+        if token.ent_type_ in UNTOPICAL_ENTS:
             continue
 
         lemma = _EDGE_NOISE.sub("", token.lemma_.lower().strip())

@@ -13,9 +13,23 @@ free of them anyway.
 import asyncio
 from datetime import UTC, datetime
 
-from api import browse, feed, onboarding, profile, users
+import pytest
+
+from api import browse, feed, onboarding, profile, session, users
 
 NOW = datetime(2026, 7, 31, 12, tzinfo=UTC)
+NOW_ISO = "2026-07-31T12:00:00Z"
+
+
+def row(cluster_id, weight, term, tf):
+    """One `signal_vectors` row, with the timestamp its decay needs."""
+    return {
+        "cluster_id": cluster_id,
+        "weight": weight,
+        "last_at": NOW_ISO,
+        "term": term,
+        "tf": tf,
+    }
 
 
 class FakeEnv:
@@ -243,15 +257,15 @@ class TestPositiveVectors:
             FakeEnv(
                 {
                     "FROM interactions i": [
-                        {"cluster_id": 1, "weight": 1.0, "term": "selic", "tf": 0.6},
-                        {"cluster_id": 1, "weight": 1.0, "term": "copom", "tf": 0.4},
-                        {"cluster_id": 2, "weight": 1.5, "term": "futebol", "tf": 1.0},
+                        row(1, 1.0, "selic", 0.6),
+                        row(1, 1.0, "copom", 0.4),
+                        row(2, 1.5, "futebol", 1.0),
                     ]
                 }
             ),
         )
 
-        vectors = asyncio.run(profile.positive_vectors(env, "u1"))
+        vectors = asyncio.run(profile.positive_vectors(env, "u1", NOW))
 
         assert sorted(vectors, key=lambda pair: pair[1]) == [
             ({"selic": 0.6, "copom": 0.4}, 1.0),
@@ -265,6 +279,57 @@ class TestPositiveVectors:
 
         _, params = env.calls[0]
         assert "hide" not in params
+
+
+class TestFaded:
+    """The long profile's time constant, which the code did not have until now.
+
+    The architecture's table of the four vectors gives this one months. Without
+    it a like from a year ago weighed exactly as much as one from a minute ago,
+    so a profile accumulated forever and nothing a reader stopped caring about
+    ever left.
+    """
+
+    def test_a_signal_from_this_moment_arrives_whole(self):
+        assert profile.faded(1.0, NOW_ISO, NOW.timestamp()) == 1.0
+
+    def test_one_half_life_halves_it(self):
+        later = NOW.timestamp() + profile.LONG_HALF_LIFE_DAYS * 86400
+
+        assert profile.faded(1.0, NOW_ISO, later) == pytest.approx(0.5)
+
+    def test_last_week_is_essentially_untouched(self):
+        week = NOW.timestamp() + 7 * 86400
+
+        assert profile.faded(1.0, NOW_ISO, week) > 0.9
+
+    def test_a_year_ago_is_gone_without_being_deleted(self):
+        """It faded rather than expired, which is what the constant says should
+        happen. The reader is never told a preference was dropped.
+        """
+        year = NOW.timestamp() + 365 * 86400
+        remains = profile.faded(1.0, NOW_ISO, year)
+
+        assert 0 < remains < 0.02
+
+    def test_the_session_and_the_long_profile_read_the_same_rows_differently(self):
+        """Ten minutes against sixty days, off one log. That is the whole reason
+        interactions are stored as events rather than folded into a number.
+        """
+        assert profile.LONG_HALF_LIFE_DAYS * 24 * 60 > session.HALF_LIFE_MINUTES * 1000
+
+    def test_a_clock_running_backwards_does_not_amplify_a_signal(self):
+        earlier = NOW.timestamp() - 86400
+
+        assert profile.faded(1.0, NOW_ISO, earlier) == 1.0
+
+    def test_an_unreadable_date_costs_the_age_and_not_the_signal(self):
+        """Losing one interaction's timestamp should not lose the interaction."""
+        assert profile.faded(1.0, "nao e uma data", NOW.timestamp()) == 1.0
+        assert profile.faded(1.0, None, NOW.timestamp()) == 1.0
+
+    def test_a_signal_worth_nothing_stays_worth_nothing(self):
+        assert profile.faded(0.0, NOW_ISO, NOW.timestamp()) == 0.0
 
 
 class TestNegativeVectors:
@@ -290,14 +355,14 @@ class TestNegativeVectors:
             FakeEnv(
                 {
                     "FROM interactions i": [
-                        {"cluster_id": 7, "weight": 1.0, "term": "futebol", "tf": 0.7},
-                        {"cluster_id": 7, "weight": 1.0, "term": "escalação", "tf": 0.3},
+                        row(7, 1.0, "futebol", 0.7),
+                        row(7, 1.0, "escalação", 0.3),
                     ]
                 }
             ),
         )
 
-        vectors = asyncio.run(profile.negative_vectors(env, "u1"))
+        vectors = asyncio.run(profile.negative_vectors(env, "u1", NOW))
 
         assert vectors == [({"futebol": 0.7, "escalação": 0.3}, 1.0)]
 

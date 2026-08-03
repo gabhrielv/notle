@@ -497,16 +497,31 @@ Persona de tecnologia, 1423 clusters na janela, acaso de 0.052:
 |---|---|---|---|---|---|---|---|---|
 | precisão@24 | 0.04 | 0.12 | 0.42 | 0.42 | **0.50** | 0.38 | 0.21 | 0.12 |
 
-O sistema **aprende**: 0.50 contra 0.052 de acaso é quase dez vezes, e ele nunca soube o que é um portal. Depois **regride**, e não por esgotar o assunto: na rodada 8 ainda sobravam 55 dos 74 clusters de tecnologia.
+O sistema **aprende**: 0.50 contra 0.052 de acaso é quase dez vezes, e ele nunca soube o que é um portal. Depois a curva cai, e descobrir por quê levou cinco experimentos, quatro deles refutando a hipótese anterior.
 
-A causa aparece olhando o perfil por dentro:
+**A primeira leitura estava errada.** Olhando os termos do perfil na rodada 9 (`promoção, bom, olhar digital, post, aparecer, amazon`) contra os da rodada 3 (`android, armazenamento, pixels, backups, qhd`), a conclusão óbvia era que a média dilui e o perfil piora conforme cresce. Ela não sobreviveu à medição:
 
-| rodada | termos mais fortes do perfil |
+| tentativa | pico | resultado |
+|---|---|---|
+| média simples (hoje) | 0.54 | referência |
+| teto de 40 termos no perfil | 0.42 | **pior** |
+| top-8 de cada artigo | 0.17 | **muito pior** |
+| filtrar o vocabulário genérico | 0.29 | **pior**, o enchimento era o sinal |
+| desligar o vetor negativo | 0.54 | idêntico |
+| usar só os guardados recentes | 0.54 | idêntico |
+
+O teste decisivo foi outro: **desligar a exclusão de clusters já respondidos.**
+
+| | curva |
 |---|---|
-| 3, precisão 0.42 | `android, armazenamento, pixels, backups, qhd, atalho` |
-| 9, precisão 0.04 | `promoção, bom, olhar digital, post, aparecer, amazon, opção, usar` |
+| excluindo respondidos (produção) | 0.04 0.08 0.33 0.42 **0.50** 0.38 0.25 0.17 0.08 0.00 |
+| sem excluir | 0.04 0.12 0.42 0.42 **0.42** 0.42 0.42 0.42 0.42 0.42 |
 
-Olhar Digital e Canaltech publicam listas de oferta. A persona as guarda por serem de portal de tecnologia, e o vocabulário genérico de comércio captura o perfil, porque **a média é dominada pelo que se repete entre o que foi guardado**, e num conjunto heterogêneo o que se repete é o enchimento e não o assunto. `olhar digital` virou termo porque o portal se nomeia nos próprios resumos.
+Sem exclusão a precisão fica **estável para sempre**. A queda é a persona esgotando o próprio acervo: há 50 clusters de tecnologia em português na janela e ela guarda 3 por rodada. O perfil não degrada; ele acerta até acabar o que havia para acertar.
+
+E o resto do que sobrava não era alcançável: das 23 matérias guardadas, **todas** eram Canaltech ou Olhar Digital, e o que restou incluía 13 da TechCrunch, 10 da The Verge e 1 da IEEE, todas em inglês. Um perfil em português não alcança inglês, o que a seção de fontes já declara como o resultado correto e não como limitação.
+
+Ou seja: **a queda é artefato da métrica**, que trata como falha o comportamento que `acted_on` existe para produzir. Excluir cluster já respondido é o que impede uma matéria curtida de se fixar no topo para sempre, e é justamente o que faz a precisão cair quando o alvo da persona é pequeno.
 
 ### O que a busca em grade concluiu, que foi pouco
 
@@ -527,7 +542,7 @@ Três leituras que valem mais que a grade:
 
 **`W_COOCOR` reduzir a precisão é o anti-bolha funcionando.** A expansão puxa de propósito para assunto vizinho, que por definição da persona é assunto errado. Uma métrica que premia convergência tem que punir descoberta, e o valor 0.0 vencer por um card é a métrica dizendo isso, não o mecanismo estando errado.
 
-**A regressão do perfil é maior que qualquer constante.** Nenhum valor testado impede a queda depois da quinta rodada, porque a causa não está na fórmula de ranking e sim em `combine`, que é média simples sem corte de termos e sem decaimento. A tabela dos quatro vetores diz que o perfil longo tem constante de tempo de meses, e o código não implementa decaimento nenhum: um like de um mês atrás pesa igual a um de um minuto atrás.
+**Nenhum valor impede a queda porque nenhuma constante a causa.** Ela é o acervo da persona acabando, e isso é o `acted_on` funcionando. Ainda assim a investigação achou um buraco de verdade entre doc e código: a tabela dos quatro vetores diz que o perfil longo tem constante de tempo de **meses**, e `combine` não implementava decaimento nenhum, então um like de um mês atrás pesava igual a um de um minuto atrás. Corrigido, e explicitamente **não medido por este simulador**, que comprime todas as interações num instante só.
 
 ### Persona de política, o controle negativo
 

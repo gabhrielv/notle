@@ -59,6 +59,25 @@ NEGATIVE = tuple(NEGATIVE_WEIGHTS)
 # they adjust, they do not decide.
 EXPLICIT = (*POSITIVE, *NEGATIVE)
 
+# How long a signal keeps half its weight in the long profile.
+#
+# The architecture's table of the four vectors gives this one a time constant of
+# months, and until now the code implemented none: a like from a year ago
+# weighed exactly as much as one from a minute ago, so a profile accumulated
+# forever and nothing a reader stopped caring about ever left it.
+#
+# Sixty days is what "months" means at the coarsest reading that still moves.
+# A taste from last week arrives essentially whole, one from a season ago at a
+# quarter, and one from a year ago at 1.5%, which is gone without ever being
+# deleted. The reader is never told a preference expired, because it did not:
+# it faded, which is what the constant says it should do.
+#
+# Note that the persona simulator cannot see this. It compresses every
+# interaction into one instant, so every decay factor there is exactly 1. This
+# is a correction to the specification rather than a result from the grid, and
+# it is recorded as such.
+LONG_HALF_LIFE_DAYS = 60.0
+
 
 def combine(vectors: list[tuple[dict[str, float], float]]) -> dict[str, float]:
     """Weighted mean of the term vectors of the clusters a reader kept.
@@ -82,7 +101,7 @@ def combine(vectors: list[tuple[dict[str, float], float]]) -> dict[str, float]:
 
 
 async def signal_vectors(
-    env, user_id: str, kinds: tuple[str, ...]
+    env, user_id: str, kinds: tuple[str, ...], now=None
 ) -> list[tuple[dict[str, float], float]]:
     """The anchor terms of every cluster this reader answered one way, weighted.
 
@@ -106,11 +125,18 @@ async def signal_vectors(
     a click was followed by an immediate return, and the honest reading of that
     pair is that the reader looked and left, not that they were interested a
     little.
+
+    Each cluster's weight fades with how long ago it was answered, at the half
+    life the architecture gives this vector. The session profile reads the same
+    rows through a ten minute half life; this one reads them through sixty days.
+    Same log, two time constants, which is the whole reason interactions are
+    stored as events rather than folded into a number.
     """
     placeholders = ", ".join("?" * len(kinds))
     rows = await query(
         env,
-        "SELECT i.cluster_id, SUM(i.value) AS weight, t.term, t.tf "
+        "SELECT i.cluster_id, SUM(i.value) AS weight, MAX(i.created_at) AS last_at, "
+        "t.term, t.tf "
         "FROM interactions i "
         "JOIN clusters c ON c.id = i.cluster_id "
         "JOIN article_terms t ON t.article_id = c.representative_article_id "
@@ -119,20 +145,43 @@ async def signal_vectors(
         [user_id, *kinds],
     )
 
+    now = (now or datetime.now(UTC)).timestamp()
     grouped: dict[int, tuple[dict[str, float], float]] = {}
+
     for row in rows:
-        vector, _ = grouped.setdefault(row["cluster_id"], ({}, row["weight"] or 0.0))
-        vector[row["term"]] = row["tf"]
+        cluster_id = row["cluster_id"]
+        if cluster_id not in grouped:
+            grouped[cluster_id] = ({}, faded(row["weight"] or 0.0, row["last_at"], now))
+        grouped[cluster_id][0][row["term"]] = row["tf"]
 
     return [pair for pair in grouped.values() if pair[1] > 0]
 
 
-async def positive_vectors(env, user_id: str) -> list[tuple[dict[str, float], float]]:
+def faded(weight: float, last_at: str, now: float) -> float:
+    """A signal's weight, reduced by how long ago it was given.
+
+    An unreadable timestamp is treated as just now rather than as infinitely
+    old. Losing the date of one interaction should cost its age, not the signal
+    itself.
+    """
+    if weight <= 0:
+        return 0.0
+
+    try:
+        seen = datetime.fromisoformat(last_at).timestamp()
+    except (TypeError, ValueError):
+        return weight
+
+    days = max(now - seen, 0.0) / 86400.0
+    return weight * 0.5 ** (days / LONG_HALF_LIFE_DAYS)
+
+
+async def positive_vectors(env, user_id: str, now=None):
     """Clusters the reader kept, or read, or clicked through to."""
-    return await signal_vectors(env, user_id, POSITIVE)
+    return await signal_vectors(env, user_id, POSITIVE, now)
 
 
-async def negative_vectors(env, user_id: str) -> list[tuple[dict[str, float], float]]:
+async def negative_vectors(env, user_id: str, now=None):
     """Clusters the reader hid.
 
     Slice 1 treated a hide as an exclusion and nothing more, so the reader's
@@ -140,7 +189,7 @@ async def negative_vectors(env, user_id: str) -> list[tuple[dict[str, float], fl
     Read as a vector it reaches everything that resembles it, which is what
     lets a card say why it ranked lower instead of a subject simply vanishing.
     """
-    return await signal_vectors(env, user_id, NEGATIVE)
+    return await signal_vectors(env, user_id, NEGATIVE, now)
 
 
 async def hidden(env, user_id: str) -> set[int]:

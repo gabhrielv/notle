@@ -75,10 +75,35 @@ REPORTING_VERBS = frozenset({"afirmar", "declarar", "informar", "apontar", "cont
 # temporal furniture: nearly every article names one, so naming one separates
 # nothing. Months are deliberately absent from this list because `janeiro` is
 # part of `Rio de Janeiro`.
+# Verbs and nouns of invitation. They ask the reader to do something with the
+# page and never say anything about the story, which is the same category `leia`
+# is in. Found by reading the co-occurrence table: the strongest neighbours of
+# `google` came back as `favorite`, `acompanhar`, `perca` and `noticia`, because
+# every portal ends its technology articles the same way.
+#
+# Curated, and safe to curate for the reason the architecture already gives: the
+# words that ask for a click today will still be asking in three months. It is a
+# list of topic terms that rots, not a list of function words.
 CHROME = frozenset(
     {
         "leia",
         "ler",
+        "acompanhar",
+        "favorite",
+        "favoritar",
+        "perca",
+        "notícia",
+        "siga",
+        "seguir",
+        "participe",
+        "participar",
+        "confira",
+        "conferir",
+        "veja",
+        "saiba",
+        "clicar",
+        "reprodução",
+        "foto",
         "segunda-feira",
         "terça-feira",
         "quarta-feira",

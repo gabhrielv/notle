@@ -1,0 +1,46 @@
+name: cooccurrence
+
+# Its own schedule, separate from the hourly ingestion, because it is a different
+# shape of job. It reads the whole archive rather than the last hour, it is
+# quadratic in what each article contributes, and the answer moves slowly enough
+# that a week between runs costs nothing anybody could notice.
+#
+# Updating pair by pair during ingestion was the alternative and it is far worse:
+# an article of around 28 terms carries some 378 pairs, so 300 articles a day
+# would be over a hundred thousand writes daily for a statistic that barely
+# moves.
+on:
+  schedule:
+    # Sunday, well away from the hourly run's :17 so the two never contend for
+    # the same rows.
+    - cron: "40 4 * * 0"
+  workflow_dispatch:
+
+concurrency:
+  group: cooccurrence
+  cancel-in-progress: false
+
+jobs:
+  rebuild:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Install dependencies
+        run: uv sync --group ingest --frozen
+
+      - name: Rebuild the co-occurrence table
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
+          PYTHONPATH: src
+        run: uv run --group ingest python -m scripts.rebuild_cooccurrence

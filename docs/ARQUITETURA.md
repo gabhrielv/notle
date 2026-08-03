@@ -411,6 +411,16 @@ O ponto de partida é que **o dado já nasce velho de propósito**: a ingestão 
 
 **Camada 3, service worker.** Estratégia de servir o cache e revalidar em segundo plano. É de longe o maior ganho de percepção: quem volta vê conteúdo real de imediato, e a latência do banco acontece invisível atrás da tela já preenchida.
 
+Escrito à mão, sem plugin, pela mesma razão que manteve o Worker sem framework: o projeto tem duas dependências de runtime, e um gerador de service worker traria mais configuração do que o arquivo tem linhas.
+
+**Cache em tempo de execução, não pré-cache.** Sem plugin de build não há como saber os nomes com hash que o Vite gera, e adivinhá-los seria uma lista que quebra em silêncio no próximo deploy. Consequência aceita e declarada: **a primeira visita não funciona offline**, porque não há o que servir ainda. A segunda funciona, e é nela que offline importa.
+
+**O cabeçalho do feed mudou de `no-store` para `no-cache`.** O feed precisa sobreviver no aparelho para o service worker mostrá-lo de volta na próxima visita, que é o que offline significa num leitor de notícias. `no-cache` mantém a revalidação obrigatória, então nada velho é servido sem perguntar, e `private` continua impedindo cache compartilhado. Guardar e mandar o mundo não guardar seria o cabeçalho mentindo sobre o que o produto faz.
+
+**Busca continua `no-store`**, e a busca anônima é o motivo: cada consulta é uma chave distinta, e o cache viraria um registro do que a pessoa procurou, dentro de um produto que oferece um modo prometendo o contrário.
+
+Verificado dirigindo um Chrome de verdade por CDP: primeira visita instala o worker, segunda passa a ser controlada e cria `notle-v1-shell` e `notle-v1-data`, e com a rede cortada a página ainda renderiza manchete real em vez da tela de erro do navegador. Navegação offline para `/ultimas` cai no `index.html` guardado e o roteamento do cliente resolve o resto.
+
 **Skeleton loading**, com duas regras que não são detalhe:
 
 - Só aparece depois de um limiar de uns 200ms. Abaixo disso ele pisca e a tela fica pior do que se nada existisse.

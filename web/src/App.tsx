@@ -151,6 +151,14 @@ function Stream({ load, listKey, canAct, emptyTitle, emptyBody, children }: Stre
       {children}
       {problem && <p className="hint">{problem}</p>}
 
+      {list.offline && (
+        <p className="hint">
+          Você está sem conexão e ainda não havia nada guardado neste aparelho.
+          Volte quando a rede voltar, ou abra o site uma vez com conexão para que
+          o último feed fique disponível offline.
+        </p>
+      )}
+
       {firstLoad && slow && <Skeleton />}
 
       {list.items.length > 0 && (

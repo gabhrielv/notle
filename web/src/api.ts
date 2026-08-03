@@ -43,6 +43,12 @@ export type Page = {
   feed: Card[]
   /** Where to ask from next, or null when the list has run out. */
   next_offset: number | null
+  /**
+   * Set by the service worker when it had nothing stored and no network. The
+   * screen says so rather than showing an empty feed, which would read as the
+   * corpus being empty.
+   */
+  offline?: boolean
 }
 
 export type Feed = Page & {

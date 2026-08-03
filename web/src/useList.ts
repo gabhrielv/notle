@@ -17,6 +17,7 @@ export function useList(load: Loader, key: string) {
   const [next, setNext] = useState<number | null>(0)
   const [busy, setBusy] = useState(true)
   const [failed, setFailed] = useState(false)
+  const [offline, setOffline] = useState(false)
 
   const currentKey = useRef(key)
   const loader = useRef(load)
@@ -34,6 +35,7 @@ export function useList(load: Loader, key: string) {
         if (currentKey.current !== forKey) return
         setItems((previous) => (offset === 0 ? page.feed : [...previous, ...page.feed]))
         setNext(page.next_offset)
+        setOffline(Boolean(page.offline))
         setBusy(false)
       })
       .catch(() => {
@@ -67,7 +69,7 @@ export function useList(load: Loader, key: string) {
     setItems((previous) => previous.filter((card) => card.cluster_id !== cluster))
   }, [])
 
-  return { items, busy, failed, exhausted: next === null, more, retry, drop }
+  return { items, busy, failed, offline, exhausted: next === null, more, retry, drop }
 }
 
 /**

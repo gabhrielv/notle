@@ -26,7 +26,20 @@ from api.db import execute, query_one
 RECORDABLE = frozenset({"like", "hide"})
 
 # Personalized, so it must never be held by a cache between reader and Worker.
-PRIVATE = {"Cache-Control": "private, no-store"}
+#
+# `private` alone, not `no-store`. The feed has to survive on the device for the
+# service worker to show it back instantly on the next visit, which is the whole
+# of what offline means for a news reader. `no-cache` keeps the revalidation
+# obligatory, so nothing stale is ever served without asking, and `private`
+# keeps it out of anything shared between the reader and the Worker.
+#
+# Storing it and telling the world not to would be the header lying about what
+# the product does.
+PRIVATE = {"Cache-Control": "private, no-cache"}
+
+# Nothing the reader typed should outlive the request that answered it, so
+# search keeps the stronger rule.
+NO_STORE = {"Cache-Control": "private, no-store"}
 
 
 def _params(request) -> dict[str, list[str]]:
@@ -301,7 +314,7 @@ async def read_search(request, env):
             "feed": cards,
             "next_offset": offset + len(cards) if len(cards) >= browse.PAGE else None,
         },
-        headers=PRIVATE,
+        headers=NO_STORE,
     )
 
 

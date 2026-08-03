@@ -26,13 +26,28 @@ show.
 Agencia Brasil is public and permissively licensed, which makes it the safe
 floor if any commercial feed ever has to be dropped.
 
+The last group is the international press, and it is picked for the place it
+reports from rather than for how much it publishes. Rest of World covers
+technology outside the countries that usually get covered, the South China
+Morning Post covers Asia, and the Guardian and BBC technology desks are general
+newsrooms rather than trade press, which is a different editorial line from every
+other English feed here. Ars Technica and Tom's Hardware go deeper than the rest
+on the technical side, and ZDNET covers the enterprise nobody else does.
+
+Names that already have a voice here were left out on purpose. Gizmodo,
+TechRadar, Digital Trends and Wired UK all answered and all were fresh, and all
+four repeat what Engadget, the Verge and Wired already say.
+
 Every feed here was checked before being added, for three things at once: that
 it answers, how many items it carries, and how old its newest story is. Several
 obvious names failed that check and are not here. Tecmundo's documented feed
 returns zero items and only the `rss.` host works. Gizmodo Brasil and the Verge's
 section feed refuse the request outright. VentureBeat's AI feed answers with
 seven items whose newest is seventy five days old, which is a dead feed serving
-200. Meio Bit and Startups were both over two days stale when tested.
+200. Meio Bit and Startups were both over two days stale when tested. DW Brasil
+and El Pais Brasil answer with dozens of items dated more than three years back.
+MIT News was four days stale. Nikkei Asia carries no dates at all, which makes
+every story undatable and therefore unrankable by recency.
 """
 
 from dataclasses import dataclass
@@ -138,4 +153,45 @@ SOURCES = (
         language="en",
     ),
     Source("Wired", "https://www.wired.com/feed/rss", "https://www.wired.com", language="en"),
+    # The international press, chosen for where they report from rather than for
+    # how much they publish. The block above is almost entirely American trade
+    # coverage, so adding more of it would have deepened one voice instead of
+    # widening the corpus.
+    Source(
+        "Ars Technica",
+        "https://feeds.arstechnica.com/arstechnica/index",
+        "https://arstechnica.com",
+        language="en",
+    ),
+    Source(
+        "Rest of World",
+        "https://restofworld.org/feed/latest",
+        "https://restofworld.org",
+        language="en",
+    ),
+    Source(
+        "South China Morning Post",
+        "https://www.scmp.com/rss/36/feed",
+        "https://www.scmp.com",
+        language="en",
+    ),
+    Source(
+        "The Guardian",
+        "https://www.theguardian.com/uk/technology/rss",
+        "https://www.theguardian.com/technology",
+        language="en",
+    ),
+    Source(
+        "BBC Technology",
+        "https://feeds.bbci.co.uk/news/technology/rss.xml",
+        "https://www.bbc.com/news/technology",
+        language="en",
+    ),
+    Source(
+        "Tom's Hardware",
+        "https://www.tomshardware.com/feeds/all",
+        "https://www.tomshardware.com",
+        language="en",
+    ),
+    Source("ZDNET", "https://www.zdnet.com/news/rss.xml", "https://www.zdnet.com", language="en"),
 )

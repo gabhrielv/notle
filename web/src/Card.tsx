@@ -152,8 +152,11 @@ export function Card({
           by IDF is whichever proper noun is rarest: a story about a candidate
           comes back labelled with the park he spoke in. Three terms describe the
           group instead of miscalling it. */}
-      {card.about.length > 0 && (
-        <p className="kicker">{card.about.slice(0, 3).join(' · ')}</p>
+      {(card.about.length > 0 || card.discovery) && (
+        <p className="kicker">
+          {card.discovery && <span className="badge">descoberta</span>}
+          {card.about.slice(0, 3).join(' · ')}
+        </p>
       )}
 
       <h2 className="headline">

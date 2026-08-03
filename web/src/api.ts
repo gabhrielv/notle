@@ -30,6 +30,12 @@ export type Card = {
   score?: number
   similarity?: number
   penalty?: number
+  /**
+   * True when the card took a reserved slot: high coverage, and an affinity the
+   * profile has no opinion about. It is the counterweight to the feed becoming
+   * a mirror, so the card says so.
+   */
+  discovery?: boolean
 }
 
 /** Every list answers in this shape, which is what lets one scroll drive them all. */
@@ -132,6 +138,18 @@ export function readSearch(
   signal?: AbortSignal,
 ): Promise<Search> {
   return read(`/api/search?q=${encodeURIComponent(query)}&offset=${offset}`, signal)
+}
+
+/** Moves the slider between bubble and discovery. */
+export async function setDiscovery(ratio: number): Promise<void> {
+  const response = await fetch('/api/discovery', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ratio }),
+  })
+  if (!response.ok) {
+    throw new Error(`discovery respondeu ${response.status}`)
+  }
 }
 
 /** Records the cold start answer. An empty list is a skip, and still an answer. */

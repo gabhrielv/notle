@@ -430,6 +430,40 @@ body::before {
   color: var(--reg);
 }
 
+/* The one badge on a card, and it earns the accent: a reserved slot is the
+   feed admitting it went looking outside what it knows about the reader. */
+.badge {
+  margin-right: 0.5rem;
+  padding: 0.08rem 0.35rem;
+  background: var(--reg);
+  color: var(--paper);
+  font-family: var(--ui);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+
+.slider {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 1rem;
+  font-size: 0.76rem;
+  color: var(--ink-2);
+}
+
+.slider input {
+  flex: 1 1 8rem;
+  max-width: 14rem;
+  accent-color: var(--reg);
+}
+
+.slider-value {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  color: var(--ink);
+  min-width: 8.5rem;
+}
+
 /* ---------- cards ---------- */
 
 .feed {

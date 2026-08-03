@@ -1,7 +1,14 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Card } from './Card'
 import { Onboarding } from './Onboarding'
-import { answerOnboarding, readFeed, readLatest, readSearch, record } from './api'
+import {
+  answerOnboarding,
+  readFeed,
+  readLatest,
+  readSearch,
+  record,
+  setDiscovery,
+} from './api'
 import type { Feed, Signal } from './api'
 import { useTheme } from './theme'
 import { useList, useSentinel } from './useList'
@@ -204,6 +211,7 @@ function FeedView() {
   const [isNew, setIsNew] = useState(false)
   const [cold, setCold] = useState<Feed['onboarding'] | null>(null)
   const [run, setRun] = useState<Feed['session'] | null>(null)
+  const [ratio, setRatio] = useState<number | null>(null)
   // Bumped when the cold start is answered, so the list reloads against the
   // profile that answer just created rather than the empty one behind it.
   const [generation, setGeneration] = useState(0)
@@ -213,8 +221,17 @@ function FeedView() {
     setProfile(page.profile)
     setIsNew(page.user.is_new)
     setRun(page.session)
+    setRatio((current) => (current === null ? page.user.discovery_ratio : current))
     if (offset === 0) setCold(page.onboarding)
     return page
+  }, [])
+
+  // Saved on release rather than on every pixel: the slider fires continuously
+  // while dragged, and the reload it triggers is a whole ranked page.
+  const slide = useCallback(async (next: number) => {
+    setRatio(next)
+    await setDiscovery(next)
+    setGeneration((n) => n + 1)
   }, [])
 
   const finish = useCallback(async (picks: number[]) => {
@@ -242,6 +259,30 @@ function FeedView() {
             : `${profile.terms} termos de gosto, ${profile.hidden_terms} escondidos`
           : 'lendo a janela'}
       </p>
+      {ratio !== null && (
+        <label className="slider">
+          <span>bolha</span>
+          <input
+            type="range"
+            min={0}
+            max={0.5}
+            step={0.05}
+            value={ratio}
+            onChange={(event) => setRatio(Number(event.target.value))}
+            onMouseUp={(event) => slide(Number(event.currentTarget.value))}
+            onTouchEnd={(event) => slide(Number(event.currentTarget.value))}
+            onKeyUp={(event) => slide(Number(event.currentTarget.value))}
+            aria-label="Quanto do feed é reservado a descoberta"
+          />
+          <span>descoberta</span>
+          <span className="slider-value">
+            {ratio === 0
+              ? 'nenhum slot reservado'
+              : `${Math.round(ratio * 100)}% dos slots`}
+          </span>
+        </label>
+      )}
+
       {run?.about && (
         <p className="run">
           <span className="run-label">agora</span> você está numa sequência sobre{' '}

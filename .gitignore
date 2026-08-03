@@ -46,3 +46,6 @@ notas/
 # Retrato do corpus para o simulador. Derivado do D1, grande, e diferente a
 # cada hora. Reconstruido com scripts/pull_corpus.py.
 .sim-corpus.json
+
+# Retorno do Stitch, referencia de desenho e nao codigo
+design/

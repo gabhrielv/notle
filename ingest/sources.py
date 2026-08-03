@@ -25,6 +25,14 @@ show.
 
 Agencia Brasil is public and permissively licensed, which makes it the safe
 floor if any commercial feed ever has to be dropped.
+
+Every feed here was checked before being added, for three things at once: that
+it answers, how many items it carries, and how old its newest story is. Several
+obvious names failed that check and are not here. Tecmundo's documented feed
+returns zero items and only the `rss.` host works. Gizmodo Brasil and the Verge's
+section feed refuse the request outright. VentureBeat's AI feed answers with
+seven items whose newest is seventy five days old, which is a dead feed serving
+200. Meio Bit and Startups were both over two days stale when tested.
 """
 
 from dataclasses import dataclass
@@ -105,4 +113,29 @@ SOURCES = (
         "https://spectrum.ieee.org",
         language="en",
     ),
+    Source("Tecmundo", "https://rss.tecmundo.com.br/feed", "https://www.tecmundo.com.br"),
+    Source("Adrenaline", "https://www.adrenaline.com.br/feed/", "https://www.adrenaline.com.br"),
+    Source(
+        "Hardware.com.br",
+        "https://www.hardware.com.br/feed/",
+        "https://www.hardware.com.br",
+    ),
+    Source(
+        "MIT Technology Review Brasil",
+        "https://mittechreview.com.br/feed/",
+        "https://mittechreview.com.br",
+    ),
+    Source(
+        "The Register",
+        "https://www.theregister.com/headlines.atom",
+        "https://www.theregister.com",
+        language="en",
+    ),
+    Source(
+        "Engadget",
+        "https://www.engadget.com/rss.xml",
+        "https://www.engadget.com",
+        language="en",
+    ),
+    Source("Wired", "https://www.wired.com/feed/rss", "https://www.wired.com", language="en"),
 )

@@ -34,10 +34,13 @@ A terceira tem uma consequência que reorganiza o projeto inteiro: **todo visita
 
 | Peça | Escolha | Por quê |
 |---|---|---|
-| API | FastAPI como função serverless | Cold start de ~1s em vez dos ~50s de um contêiner de plano gratuito que hiberna |
-| Banco | SQLite gerenciado na borda (Turso / libSQL) | Não hiberna, e fala HTTP em vez de protocolo de conexão, o que elimina o esgotamento de conexões que é a forma clássica de um app serverless com Postgres cair sob carga |
-| Ingestão | GitHub Actions agendado | Ler RSS é um job de 30 segundos por hora. Não justifica um worker sempre ligado, e worker sempre ligado é justamente o que ninguém dá de graça |
-| Front | React + Vite, estático, com service worker | Offline do último feed é a única capacidade que faz o rótulo PWA significar algo num leitor de notícias |
+| API | Cloudflare Worker em Python, sem framework | Um Worker Python tem 1000ms de CPU de inicialização, e só o `import` do FastAPI custa 1710ms, então o deploy é recusado. Com um punhado de rotas e nenhum schema para servir, o roteamento cabe num dicionário |
+| Banco | Cloudflare D1 | SQLite gerenciado na borda. Não hiberna, e o Worker fala com ele por binding em vez de conexão, o que elimina o esgotamento de pool que é a forma clássica de um app serverless com Postgres cair sob carga |
+| Ingestão | GitHub Actions agendado, de hora em hora | Ler RSS é um job de 30 segundos por hora. Não justifica um worker sempre ligado, e worker sempre ligado é justamente o que ninguém dá de graça. É também onde o spaCy roda, longe do teto de CPU do Worker |
+| Co-ocorrência | GitHub Actions, semanal e separado | Lê o acervo inteiro em vez da última hora, e a resposta se move devagar demais para justificar rodar junto |
+| Front | React + Vite, estático, com service worker escrito à mão | Servido pelo mesmo Worker, mesma origem, sem CORS. Offline do último feed é a única capacidade que faz o rótulo PWA significar algo num leitor de notícias |
+
+> **Nota de honestidade.** As três primeiras linhas desta tabela diziam FastAPI e Turso/libSQL até a fatia 9. O desenho original apostava nisso, a implementação foi para Workers e D1 nos primeiros commits, e o texto ficou para trás. Está corrigido aqui porque este documento é declarado fonte da verdade do projeto, e uma fonte da verdade errada sobre a peça mais básica é pior que documento nenhum.
 
 O serverless impõe uma fronteira que vale como regra do projeto:
 
@@ -61,14 +64,18 @@ corpus_stats     total_docs
 article_terms    article_id FK, term, tf        -- PK (article_id, term), índice em term
 term_cooccur     term_a, term_b, score          -- índice em term_a
 
-users            id, created_at, discovery_ratio
+users            id, created_at, discovery_ratio, onboarded_at
 
-interactions     id, user_id FK, article_id FK, cluster_id, session_id,
+interactions     id, user_id FK, cluster_id, session_id,
                  type, value, duration_ms, created_at
 
 user_profile     user_id PK, term_vector JSON, neg_term_vector JSON, updated_at
 
-feed_candidates  run_id, cluster_id, base_score, top_terms JSON   -- materializada pelo cron
+feed_candidates  cluster_id PK, base_score, norm, published_at,
+                 top_terms JSON               -- materializada pelo cron horário
+
+onboarding_picks cluster_id PK, position      -- as 12 do cold start
+article_search   title, summary               -- FTS5, unicode61 remove_diacritics
 ```
 
 Três pontos que não são óbvios:
@@ -77,7 +84,17 @@ Três pontos que não são óbvios:
 
 **Não existe tabela de perfil de sessão.** O vetor de sessão é recalculado a partir de `interactions` filtrando por `session_id`. São poucas linhas, e recomputar é sempre correto.
 
-**`articles` não é podada, `article_terms` é.** Título e resumo custam uns 55MB por ano. O volume está nos termos, então só eles são removidos além da janela de ranking. Assim o histórico de interações continua auditável sem estourar o armazenamento do plano gratuito.
+**`articles` não é podada, `article_terms` é.** Título e resumo custam uns 55MB por ano. O volume está nos termos: ~28 linhas por artigo a 600 artigos por dia dá seis milhões de linhas por ano.
+
+A promessa original dizia podar "além da janela de ranking", e a janela é de 48 horas. **Implementada ao pé da letra, ela quebraria o perfil.** `signal_vectors` monta o gosto do leitor fazendo join em `article_terms` pela âncora de cada cluster que ele respondeu, então apagar termos de mais de dois dias significaria um like de terça perdendo seu vetor na quinta, e um perfil que encolhe sozinho sem nada na tela apontando por quê.
+
+São duas regras, então:
+
+> **Nada que seja âncora de cluster respondido é removido, nunca. O resto sai depois de 90 dias.**
+
+Os 90 dias também não são a janela de ranking, e o motivo é o job semanal: ele lê o acervo inteiro, e a qualidade dos vizinhos foi medida contra 3121 artigos. Cortar para dois dias o deixaria com um décimo disso e transformaria `selic` num termo sem vizinhos. O número também passa da meia-vida de 60 dias do perfil longo, então um sinal ainda valendo mais de um terço nunca encontra seus termos faltando.
+
+A poda roda **no job semanal e depois da co-ocorrência**. Podar antes encolheria o acervo que o próprio job mede.
 
 ## Pipeline de ingestão
 
@@ -603,5 +620,22 @@ Este projeto não cita a obra como decoração bibliográfica. Cada trava do sis
 | Tempo fora tratado de forma assimétrica | Nota 357, p. 169: Richard Jones diferenciava o Audioscrobbler da Amazon pelo fato de que na Amazon "um usuário pode comprar um presente para alguém e esse pedido é registrado em seu perfil, mesmo que não corresponda necessariamente a seus interesses". É o problema do sinal implícito contaminado por evento alheio ao gosto, que aqui aparece como o usuário que sai do app para responder uma mensagem. Por isso só a metade confiável do sinal é usada. |
 | Impressão com peso zero | "A relevância tende a aumentar proporcionalmente de acordo com o uso de um determinado item" (p. 110, sobre Bradford e Zipf). Se exibição alimentasse o perfil, o sistema mediria a própria exposição e chamaria isso de gosto. |
 | Modelo baseado só em gosto | Santini separa três modelos de SR: gosto, reputação e popularidade (p. 107). O Notle implementa apenas o primeiro, deliberadamente. Sem sinal de popularidade não há amplificação viral, e a ausência é uma posição de projeto, não uma lacuna. |
+
+### Operação
+
+Quatro workflows, e nenhum passo que dependa de alguém ter o `wrangler` instalado.
+
+| Workflow | Quando | O que faz |
+|---|---|---|
+| `ingest` | de hora em hora, aos :17 | lê os feeds, clusteriza, materializa `feed_candidates` e o onboarding |
+| `cooccurrence` | domingo às 4:40 | recalcula `term_cooccur` sobre o acervo, e só então poda `article_terms` |
+| `deploy` | a cada push na main | testa, linta, **aplica migrations** e sobe o Worker |
+| `reprocess` | só à mão | re-lematiza o acervo sob as regras de hoje |
+
+Os três que escrevem no corpus dividem o mesmo grupo de concorrência. Duas passadas simultâneas deixariam `terms.doc_count` contando um corpus que nenhuma das duas viu.
+
+**As migrations são aplicadas antes do deploy, nunca depois.** A ordem inversa é a que põe um Worker novo na frente de um schema velho e produz erro de coluna inexistente em produção. As cinco primeiras foram aplicadas à mão antes deste workflow existir e estão registradas em `d1_migrations`, então a sexta sobe por comando.
+
+**O reprocessamento não tem agenda de propósito.** Ele conserta a discordância entre o que `article_terms` guardou e as regras que o código usa hoje, e essa discordância só aparece quando alguém edita uma lista de descarte. Uma agenda faria minutos de trabalho toda semana para um evento que acontece três vezes por ano.
 
 Não consultado ainda: SANTINI, Rose Marie. *O algoritmo do gosto*, vol. 2: tecnologias de controle, contágio e curadoria de si. Appris. Pelo título, deve tratar de contágio e curadoria de si, que tocam diretamente o vetor de sessão e o laço de reforço.

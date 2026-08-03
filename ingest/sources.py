@@ -38,6 +38,21 @@ class Source:
     language: str = "pt"
 
 
+def portal_names() -> frozenset[str]:
+    """The portals' own names, lowercased, as terms never to keep.
+
+    A portal names itself inside its own summaries, so entity recognition turns
+    it into a term and it enters the feature space. `olhar digital` reached the
+    strongest terms of a simulated reader's profile that way, which is the
+    publisher leaking into a vector that is supposed to be about subjects.
+
+    Structural rather than a curated list: it is derived from `SOURCES`, so
+    adding a feed adds its name here and removing one removes it, with nothing
+    to remember.
+    """
+    return frozenset(source.name.lower() for source in SOURCES)
+
+
 SOURCES = (
     Source("G1", "https://g1.globo.com/rss/g1/", "https://g1.globo.com"),
     Source(

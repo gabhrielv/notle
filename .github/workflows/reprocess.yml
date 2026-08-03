@@ -1,0 +1,49 @@
+name: reprocess
+
+# Só à mão. Re-lematiza o acervo inteiro e reescreve dezenas de milhares de
+# linhas para consertar algo que só muda quando alguém edita uma lista de
+# descarte. Não há agenda porque não há evento periódico que o justifique.
+#
+# Rodar depois de mexer em CHROME, LIGHT_VERBS, REPORTING_VERBS ou nos nomes das
+# fontes. Até rodar, `article_terms` guarda o que o normalizador decidiu na
+# chegada e discorda do código que o lê.
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Só contar, sem escrever"
+        type: boolean
+        default: true
+
+concurrency:
+  # A ingestão horária escreve nas mesmas tabelas. Duas passadas ao mesmo tempo
+  # deixariam terms.doc_count contando um corpus que nenhuma das duas viu.
+  group: corpus-write
+  cancel-in-progress: false
+
+jobs:
+  reprocess:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Install dependencies
+        run: uv sync --group ingest --frozen
+
+      - name: Reprocess
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
+          PYTHONPATH: src
+        run: |
+          uv run --group ingest python -m scripts.reprocess_terms \
+            ${{ inputs.dry_run && '--dry-run' || '' }}

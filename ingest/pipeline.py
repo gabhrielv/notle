@@ -16,7 +16,7 @@ from ingest import candidates, onboarding
 from ingest.clustering import assign_cluster
 from ingest.feeds import ArticleDraft, dedupe_by_url, parse_feed
 from ingest.normalize import lemmatize, term_frequencies
-from ingest.sources import SOURCES
+from ingest.sources import SOURCES, portal_names
 from ingest.store import MAX_BOUND_PARAMS, D1Client, chunked
 from ranking.vectors import weigh
 
@@ -54,14 +54,18 @@ def prepare(drafts: list[ArticleDraft], known_urls: set[str]) -> IngestionPlan:
     """
     articles: list[PreparedArticle] = []
     document_counts: Counter = Counter()
+    banned = portal_names()
 
     for draft in drafts:
         if draft.url in known_urls:
             continue
 
-        frequencies = term_frequencies(
-            lemmatize(f"{draft.title}. {draft.summary}", draft.language)
-        )
+        lemmas = lemmatize(f"{draft.title}. {draft.summary}", draft.language)
+
+        # A portal names itself in its own summaries, so its name becomes a term
+        # and enters the feature space. Dropped here rather than in `normalize`
+        # because only this layer knows what the portals are called.
+        frequencies = term_frequencies([lemma for lemma in lemmas if lemma not in banned])
         if not frequencies:
             # An empty vector has cosine zero against every profile forever, so
             # the row and its cluster could never rank.

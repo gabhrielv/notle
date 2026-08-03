@@ -260,43 +260,45 @@ function FeedView() {
       emptyTitle="Nada na janela agora"
       emptyBody="A ingestão lê os portais de hora em hora, e o feed olha as últimas 48 horas. Se você respondeu a tudo, volte depois da próxima passada."
     >
-      <p className="standfirst">
-        {profile
-          ? profile.empty && !profile.hidden_terms
-            ? 'ordenado por recência, ainda sem gosto registrado'
-            : `${profile.terms} termos de gosto, ${profile.hidden_terms} escondidos`
-          : 'lendo a janela'}
-      </p>
-      {ratio !== null && (
-        <label className="slider">
-          <span>bolha</span>
-          <input
-            type="range"
-            min={0}
-            max={0.5}
-            step={0.05}
-            value={ratio}
-            onChange={(event) => setRatio(Number(event.target.value))}
-            onMouseUp={(event) => slide(Number(event.currentTarget.value))}
-            onTouchEnd={(event) => slide(Number(event.currentTarget.value))}
-            onKeyUp={(event) => slide(Number(event.currentTarget.value))}
-            aria-label="Quanto do feed é reservado a descoberta"
-          />
-          <span>descoberta</span>
-          <span className="slider-value">
-            {ratio === 0
-              ? 'nenhum slot reservado'
-              : `${Math.round(ratio * 100)}% dos slots`}
-          </span>
-        </label>
-      )}
-
-      {run?.about && (
-        <p className="run">
-          <span className="run-label">agora</span> você está numa sequência sobre{' '}
-          <b>{run.about}</b>
+      <div className="panel">
+        <p className="standfirst">
+          {profile
+            ? profile.empty && !profile.hidden_terms
+              ? 'ordenado por recência, ainda sem gosto registrado'
+              : `${profile.terms} termos de gosto, ${profile.hidden_terms} escondidos`
+            : 'lendo a janela'}
         </p>
-      )}
+        {ratio !== null && (
+          <label className="slider">
+            <span>bolha</span>
+            <input
+              type="range"
+              min={0}
+              max={0.5}
+              step={0.05}
+              value={ratio}
+              onChange={(event) => setRatio(Number(event.target.value))}
+              onMouseUp={(event) => slide(Number(event.currentTarget.value))}
+              onTouchEnd={(event) => slide(Number(event.currentTarget.value))}
+              onKeyUp={(event) => slide(Number(event.currentTarget.value))}
+              aria-label="Quanto do feed é reservado a descoberta"
+            />
+            <span>descoberta</span>
+            <span className="slider-value">
+              {ratio === 0
+                ? 'nenhum slot reservado'
+                : `${Math.round(ratio * 100)}% dos slots`}
+            </span>
+          </label>
+        )}
+
+        {run?.about && (
+          <p className="run">
+            <span className="run-label" aria-hidden="true" />
+            agora · você está numa sequência sobre <b>{run.about}</b>
+          </p>
+        )}
+      </div>
       {isNew && (
         <p className="hint">
           Interessa e ocultar ensinam o feed. A matéria sai da lista e o próximo
@@ -328,19 +330,19 @@ function LatestView() {
       emptyTitle="O corpus está vazio"
       emptyBody="Nenhuma matéria foi ingerida ainda. A primeira passada roda de hora em hora."
     >
-      <p className="standfirst">tudo que chegou, da mais nova para a mais velha</p>
-      {hiddenCount > 0 && (
-        <label className="switch">
-          <input
-            type="checkbox"
-            checked={showHidden}
-            onChange={(event) => setShowHidden(event.target.checked)}
-          />
-          <span>
-            mostrar as {hiddenCount} que você ocultou
-          </span>
-        </label>
-      )}
+      <div className="panel">
+        <p className="standfirst">tudo que chegou, da mais nova para a mais velha</p>
+        {hiddenCount > 0 && (
+          <label className="switch">
+            <input
+              type="checkbox"
+              checked={showHidden}
+              onChange={(event) => setShowHidden(event.target.checked)}
+            />
+            <span>mostrar as {hiddenCount} que você ocultou</span>
+          </label>
+        )}
+      </div>
     </Stream>
   )
 }
@@ -413,44 +415,121 @@ function SearchView() {
   )
 }
 
-export default function App() {
-  const [route, go] = useRoute()
+/** Drawn here rather than pulled from an icon font, which would not load offline. */
+const ICONS: Record<Route, React.ReactNode> = {
+  feed: (
+    <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <path d="M3 10a7 7 0 0 1 7 7M3 4a13 13 0 0 1 13 13" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      <circle cx="4" cy="16" r="1.4" fill="currentColor" />
+    </svg>
+  ),
+  latest: (
+    <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <circle cx="10" cy="10" r="7" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M10 6v4.3l2.8 1.7" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  ),
+  search: (
+    <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <circle cx="9" cy="9" r="5.5" stroke="currentColor" strokeWidth="1.6" />
+      <path d="m13.2 13.2 3.3 3.3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  ),
+}
+
+function Tabs({ route, go }: { route: Route; go: (to: Route) => void }) {
+  return (
+    <>
+      {(Object.keys(PATHS) as Route[]).map((name) => (
+        <button
+          key={name}
+          type="button"
+          className={`tab${route === name ? ' is-current' : ''}`}
+          aria-current={route === name ? 'page' : undefined}
+          onClick={() => go(name)}
+        >
+          {ICONS[name]}
+          <span>{LABELS[name]}</span>
+        </button>
+      ))}
+    </>
+  )
+}
+
+function Theme() {
   const [theme, toggleTheme] = useTheme()
+  const dark = theme === 'dark'
 
   return (
-    <main className="shell">
-      <header className="masthead">
+    <button
+      type="button"
+      className="theme"
+      onClick={toggleTheme}
+      aria-label={dark ? 'Usar tema claro' : 'Usar tema escuro'}
+    >
+      <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        {dark ? (
+          <>
+            <circle cx="8" cy="8" r="3.2" stroke="currentColor" strokeWidth="1.4" />
+            <path
+              d="M8 1v1.6M8 13.4V15M1 8h1.6M13.4 8H15M3.1 3.1l1.1 1.1M11.8 11.8l1.1 1.1M12.9 3.1l-1.1 1.1M4.2 11.8l-1.1 1.1"
+              stroke="currentColor"
+              strokeWidth="1.4"
+              strokeLinecap="round"
+            />
+          </>
+        ) : (
+          <path
+            d="M13.5 9.6A6 6 0 0 1 6.4 2.5a6 6 0 1 0 7.1 7.1Z"
+            stroke="currentColor"
+            strokeWidth="1.4"
+            strokeLinejoin="round"
+          />
+        )}
+      </svg>
+      {dark ? 'claro' : 'escuro'}
+    </button>
+  )
+}
+
+export default function App() {
+  const [route, go] = useRoute()
+
+  return (
+    <>
+      {/* The navigation leaves the reading column on desktop, which is what
+          gives the headlines the full width of the centre back. */}
+      <nav className="rail" aria-label="Seções">
+        <div>
+          <button className="wordmark" type="button" onClick={() => go('feed')}>
+            Notle<span>.</span>
+          </button>
+          <p className="tagline">feed explicável</p>
+        </div>
+        <div className="rail-nav">
+          <Tabs route={route} go={go} />
+        </div>
+        <div className="rail-foot">
+          <Theme />
+        </div>
+      </nav>
+
+      <header className="topbar">
         <button className="wordmark" type="button" onClick={() => go('feed')}>
           Notle<span>.</span>
         </button>
-        <button
-          type="button"
-          className="theme"
-          onClick={toggleTheme}
-          aria-label={theme === 'dark' ? 'Usar tema claro' : 'Usar tema escuro'}
-        >
-          <span className="theme-dot" aria-hidden="true" />
-          {theme === 'dark' ? 'claro' : 'escuro'}
-        </button>
+        <Theme />
       </header>
 
-      <nav className="tabs">
-        {(Object.keys(PATHS) as Route[]).map((name) => (
-          <button
-            key={name}
-            type="button"
-            className={`tab${route === name ? ' is-current' : ''}`}
-            aria-current={route === name ? 'page' : undefined}
-            onClick={() => go(name)}
-          >
-            {LABELS[name]}
-          </button>
-        ))}
-      </nav>
+      <main className="shell">
+        {route === 'feed' && <FeedView />}
+        {route === 'latest' && <LatestView />}
+        {route === 'search' && <SearchView />}
+      </main>
 
-      {route === 'feed' && <FeedView />}
-      {route === 'latest' && <LatestView />}
-      {route === 'search' && <SearchView />}
-    </main>
+      <nav className="bar" aria-label="Seções">
+        <Tabs route={route} go={go} />
+      </nav>
+    </>
   )
 }

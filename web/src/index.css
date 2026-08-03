@@ -1,59 +1,86 @@
 /*
- * Ink on newsprint.
+ * A reading instrument.
  *
- * The palette is deliberately a cool grey green rather than the warm cream that
- * every editorial layout reaches for. Brazilian newsprint is grey, and the
- * difference is what keeps the page from reading as a template.
+ * The previous sheet was printed newspaper: paper stock, halftone, high contrast
+ * serif. It told the wrong story. What this product does that others do not is
+ * not publishing, it is showing the arithmetic that put each story where it is,
+ * and exposed arithmetic asks for the register of an instrument, not a stand.
  *
- * One accent, borrowed from offset printing: registration magenta. It is
- * reserved for the one thing this product does that other aggregators do not,
- * which is showing that several portals landed on the same story.
+ * Three decisions carry the rest: mono for every value the system computed, 2px
+ * corners because rounding is decoration that means nothing here, and a gutter
+ * on the left where each story carries the number of portals that ran it, joined
+ * by a continuous rule. That rule is the signature of the page. It is a vertical
+ * scale running the whole feed, and it turns the portal count into something
+ * readable at a distance, which is exactly what cross-portal grouping has to be
+ * to work as the differentiator.
+ *
+ * One accent, periwinkle, spent on what the system asserts: the term kicker, the
+ * portal counter, the positive reason. Coral is its semantic pair and appears
+ * only in the opposite direction, on the negative reason and on hiding.
+ *
+ * Both themes were designed rather than derived from each other. Every colour
+ * pair here was measured: the floor is 4.5:1 for text and the lowest value on
+ * the sheet is 5.43:1.
  */
 
 :root {
-  --paper: #e4e3d9;
-  --surface: #edece4;
-  --sunk: #d3d2c6;
-  --ink: #15140f;
-  --ink-2: #56554c;
-  --reg: #c4005c;
-  --rule: rgba(21, 20, 15, 0.14);
-  --dot: rgba(21, 20, 15, 0.16);
+  --bg: #f3f4f8;
+  --raise: #ffffff;
+  --sink: #e9ebf2;
+  --ink: #14161c;
+  --ink-2: #565b6b;
+  --accent: #3a4bd0;
+  --accent-soft: #dfe3ff;
+  --against: #b8330f;
+  --line: rgba(20, 22, 28, 0.14);
+  --line-2: rgba(20, 22, 28, 0.07);
+  --spine: rgba(20, 22, 28, 0.22);
+  --glow: rgba(58, 75, 208, 0.1);
 
-  --display: 'Newsreader', Georgia, 'Times New Roman', serif;
-  --ui: 'Archivo', system-ui, sans-serif;
-  --mono: 'IBM Plex Mono', ui-monospace, monospace;
+  --display: 'Newsreader', Georgia, serif;
+  --ui: 'Work Sans', system-ui, sans-serif;
+  --mono: 'JetBrains Mono', ui-monospace, monospace;
+
+  --rail: 15rem;
 
   color-scheme: light dark;
 }
 
 /* The system decides only while the reader has not. Once they pick a side the
-   attribute is on the root, and both branches below have to lose to it, which
-   is why the dark values are stated twice rather than left to the media query
+   attribute is on the root, and both branches below have to lose to it, which is
+   why the dark values are stated twice rather than left to the media query
    alone: a reader who chooses light at night has to get light. */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
-    --paper: #131410;
-    --surface: #1b1c16;
-    --sunk: #0d0e0a;
-    --ink: #e7e5da;
-    --ink-2: #a3a197;
-    --reg: #ff4d93;
-    --rule: rgba(231, 229, 218, 0.16);
-    --dot: rgba(231, 229, 218, 0.1);
+    --bg: #121414;
+    --raise: #1c1e1f;
+    --sink: #0c0e0e;
+    --ink: #e2e2e2;
+    --ink-2: #9a9ca6;
+    --accent: #b9c3ff;
+    --accent-soft: #262a3d;
+    --against: #ffb4a2;
+    --line: #3a3d47;
+    --line-2: rgba(226, 226, 226, 0.08);
+    --spine: #4c505e;
+    --glow: rgba(185, 195, 255, 0.12);
     color-scheme: dark;
   }
 }
 
 :root[data-theme='dark'] {
-  --paper: #131410;
-  --surface: #1b1c16;
-  --sunk: #0d0e0a;
-  --ink: #e7e5da;
-  --ink-2: #a3a197;
-  --reg: #ff4d93;
-  --rule: rgba(231, 229, 218, 0.16);
-  --dot: rgba(231, 229, 218, 0.1);
+  --bg: #121414;
+  --raise: #1c1e1f;
+  --sink: #0c0e0e;
+  --ink: #e2e2e2;
+  --ink-2: #9a9ca6;
+  --accent: #b9c3ff;
+  --accent-soft: #262a3d;
+  --against: #ffb4a2;
+  --line: #3a3d47;
+  --line-2: rgba(226, 226, 226, 0.08);
+  --spine: #4c505e;
+  --glow: rgba(185, 195, 255, 0.12);
   color-scheme: dark;
 }
 
@@ -70,427 +97,434 @@
 body {
   margin: 0;
   min-height: 100dvh;
-  background-color: var(--paper);
-  background-image: radial-gradient(
-    120% 80% at 50% -10%,
-    var(--surface) 0%,
-    var(--paper) 45%,
-    var(--sunk) 100%
-  );
+  background-color: var(--bg);
+  background-image: radial-gradient(120% 70% at 50% 0%, var(--raise) 0%, var(--bg) 60%);
   background-attachment: fixed;
   color: var(--ink);
   font-family: var(--ui);
+  font-size: 1rem;
+  line-height: 1.6;
   -webkit-font-smoothing: antialiased;
 }
 
-/* The halftone screen. A print artifact rather than a decorative texture, and
-   cheap enough to be a gradient instead of an image. */
-body::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  background-image: radial-gradient(var(--dot) 0.5px, transparent 0.6px);
-  background-size: 4px 4px;
-  opacity: 0.6;
-}
-
 :focus-visible {
-  outline: 2px solid var(--reg);
+  outline: 2px solid var(--accent);
   outline-offset: 3px;
+  border-radius: 2px;
 }
 
 /* ---------- shell ---------- */
 
+/* One column for the list, because reading here is headline after headline and
+   too much width kills that. The navigation leaves the column and becomes a rail
+   on desktop, which gives the text the full width of the centre back. */
+
 .shell {
-  position: relative;
-  z-index: 1;
-  max-width: 48rem;
+  max-width: 44rem;
   margin-inline: auto;
-  padding: 2.5rem 1.25rem 6rem;
+  padding: 1.5rem 1.15rem 6rem;
 }
 
-.masthead {
+@media (min-width: 60rem) {
+  body {
+    padding-left: var(--rail);
+  }
+
+  .shell {
+    padding: 3rem 3rem 5rem;
+  }
+}
+
+/* ---------- rail (desktop) ---------- */
+
+.rail {
+  display: none;
+}
+
+@media (min-width: 60rem) {
+  .rail {
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 40;
+    width: var(--rail);
+    display: flex;
+    flex-direction: column;
+    gap: 2.25rem;
+    padding: 3rem 1.5rem;
+    border-right: 1px solid var(--line);
+    background: var(--sink);
+  }
+}
+
+.rail-nav {
   display: flex;
-  align-items: baseline;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.rail-foot {
+  margin-top: auto;
+}
+
+/* ---------- bar (mobile) ---------- */
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
   justify-content: space-between;
-  gap: 0.5rem 1rem;
-  flex-wrap: wrap;
-  padding-bottom: 0.9rem;
-  border-bottom: 2px solid var(--ink);
+  gap: 1rem;
+  padding: 0.7rem 1.15rem;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--bg) 82%, transparent);
+  backdrop-filter: blur(14px);
+}
+
+.bar {
+  position: fixed;
+  inset: auto 0 0 0;
+  z-index: 50;
+  display: flex;
+  border-top: 1px solid var(--line);
+  background: color-mix(in srgb, var(--bg) 92%, transparent);
+  backdrop-filter: blur(14px);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+@media (min-width: 60rem) {
+  .topbar,
+  .bar {
+    display: none;
+  }
 }
 
 .wordmark {
-  margin: 0;
-  padding: 0;
   border: 0;
+  padding: 0;
   background: none;
   cursor: pointer;
-  color: var(--ink);
+  color: var(--accent);
   font-family: var(--display);
-  font-size: 2.1rem;
-  font-weight: 600;
-  letter-spacing: -0.02em;
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
   line-height: 1;
 }
 
 .wordmark span {
-  color: var(--reg);
+  color: var(--ink-2);
 }
 
-/* The toggle wears the halftone dot the background is made of: filled on paper,
-   hollow on ink. It is the one control that changes the whole surface, so it
-   says so with the surface's own mark rather than with a borrowed sun. */
-.theme {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0.3rem 0.6rem;
-  border: 1px solid var(--rule);
-  background: none;
-  cursor: pointer;
+.rail .wordmark {
+  font-size: 1.75rem;
+}
+
+.tagline {
+  margin: 0.4rem 0 0;
   color: var(--ink-2);
   font-family: var(--mono);
-  font-size: 0.7rem;
+  font-size: 0.688rem;
+  font-weight: 500;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
 }
 
-.theme:hover {
-  color: var(--ink);
-  border-color: var(--ink);
-}
-
-.theme-dot {
-  width: 0.62rem;
-  height: 0.62rem;
-  border-radius: 50%;
-  border: 1px solid currentColor;
-  background: currentColor;
-}
-
-:root[data-theme='dark'] .theme-dot {
-  background: none;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) .theme-dot {
-    background: none;
-  }
-}
-
-.tabs {
-  display: flex;
-  gap: 1.25rem;
-  margin-top: 0.9rem;
-}
+/* ---------- navigation ---------- */
 
 .tab {
-  padding: 0 0 0.3rem;
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
   border: 0;
-  border-bottom: 2px solid transparent;
   background: none;
   cursor: pointer;
   color: var(--ink-2);
   font-family: var(--ui);
-  font-size: 0.82rem;
+  font-size: 0.938rem;
   font-weight: 500;
+  text-align: left;
 }
 
-.tab:hover {
-  color: var(--ink);
+.rail .tab {
+  padding: 0.6rem 0.7rem;
+  border-radius: 4px;
+  transition: background 0.16s, color 0.16s, transform 0.16s;
 }
 
-.tab.is-current {
+.rail .tab:hover {
+  background: var(--line-2);
   color: var(--ink);
-  border-bottom-color: var(--reg);
+  transform: translateX(2px);
 }
+
+.rail .tab.is-current {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.bar .tab {
+  flex: 1;
+  flex-direction: column;
+  gap: 0.25rem;
+  justify-content: center;
+  padding: 0.55rem 0.25rem 0.7rem;
+  font-family: var(--mono);
+  font-size: 0.688rem;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+}
+
+.bar .tab.is-current {
+  color: var(--accent);
+}
+
+/* The bottom bar marks the current page with a rule along its top edge, on the
+   side the thumb is already on. A filled background on a target that size reads
+   as a smudge. */
+.bar .tab.is-current::before {
+  content: '';
+  position: absolute;
+  top: -1px;
+  width: 1.75rem;
+  height: 2px;
+  background: var(--accent);
+}
+
+.bar .tab {
+  position: relative;
+}
+
+.tab svg {
+  width: 20px;
+  height: 20px;
+  flex: none;
+}
+
+.theme {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  padding: 0.35rem 0.6rem;
+  background: none;
+  cursor: pointer;
+  color: var(--ink-2);
+  font-family: var(--mono);
+  font-size: 0.688rem;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: lowercase;
+  transition: color 0.16s, border-color 0.16s;
+}
+
+.theme:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.theme svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* ---------- list header ---------- */
 
 .standfirst {
-  margin: 1.4rem 0 0;
+  margin: 0 0 0.9rem;
+  color: var(--ink-2);
   font-family: var(--mono);
-  font-size: 0.72rem;
-  color: var(--ink-2);
-}
-
-.searchbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.75rem 1rem;
-  margin-top: 1.5rem;
-}
-
-.searchbox {
-  flex: 1 1 16rem;
-  min-width: 0;
-  padding: 0.55rem 0 0.5rem;
-  border: 0;
-  border-bottom: 2px solid var(--ink);
-  background: none;
-  color: var(--ink);
-  font-family: var(--display);
-  font-size: 1.35rem;
+  font-size: 0.75rem;
   font-weight: 500;
+  letter-spacing: 0.05em;
 }
 
-.searchbox::placeholder {
+.panel {
+  margin-bottom: 2rem;
+  padding-bottom: 1.4rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.slider {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  font-family: var(--mono);
+  font-size: 0.688rem;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.slider > span:first-child {
+  color: var(--accent);
+}
+
+.slider > span:nth-child(3) {
+  color: var(--against);
+}
+
+.slider-value {
+  grid-column: 1 / -1;
   color: var(--ink-2);
-  opacity: 0.6;
+  text-transform: none;
+  letter-spacing: 0.04em;
 }
 
-/* The field is a ruled line, not a box, so the focus ring is the rule going
-   accent rather than a rectangle drawn around something that has no sides. */
-.searchbox:focus-visible {
-  outline: none;
-  border-bottom-color: var(--reg);
+.slider input[type='range'] {
+  grid-column: 2;
+  width: 100%;
+  height: 4px;
+  margin: 0;
+  border-radius: 2px;
+  background: var(--line);
+  appearance: none;
+  cursor: pointer;
+}
+
+.slider input[type='range']::-webkit-slider-thumb {
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+}
+
+.slider input[type='range']::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+}
+
+.run {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 1rem 0 0;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  padding: 0.4rem 0.7rem;
+  background: var(--raise);
+  color: var(--ink-2);
+  font-family: var(--mono);
+  font-size: 0.688rem;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+}
+
+.run b {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+/* The dot pulses because a run is a statement about right now, and it is the
+   only thing on the page that changes on its own. */
+.run-label {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.35;
+  }
 }
 
 .switch {
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: 0.55rem;
+  margin-top: 0.9rem;
   cursor: pointer;
-  font-size: 0.76rem;
   color: var(--ink-2);
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  font-weight: 500;
 }
 
 .switch input {
-  accent-color: var(--reg);
-}
-
-.switch:hover {
-  color: var(--ink);
-}
-
-.more {
-  margin: 1.5rem 0 0;
-  font-family: var(--mono);
-  font-size: 0.7rem;
-  color: var(--ink-2);
+  width: 1rem;
+  height: 1rem;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
 }
 
 .hint {
-  margin: 1.5rem 0 0;
-  padding: 0.85rem 1rem;
-  border-left: 2px solid var(--reg);
-  background: color-mix(in srgb, var(--reg) 7%, transparent);
-  font-size: 0.85rem;
-  line-height: 1.45;
+  margin: 0 0 1.5rem;
+  border-left: 2px solid var(--accent);
+  padding: 0.5rem 0 0.5rem 0.85rem;
   color: var(--ink-2);
+  font-size: 0.875rem;
+  line-height: 1.5;
 }
 
-/* ---------- the cold start ---------- */
+/* ---------- search ---------- */
 
-.onboard {
-  margin-top: 2.25rem;
+.searchbar {
+  margin-bottom: 1.25rem;
 }
 
-.onboard-title {
-  margin: 0;
-  font-family: var(--display);
-  font-size: clamp(2rem, 5.5vw, 3rem);
-  font-weight: 500;
-  line-height: 1.02;
-  letter-spacing: -0.025em;
-  text-wrap: balance;
-}
-
-.onboard-title span {
-  font-style: italic;
-  color: var(--reg);
-}
-
-.onboard-body {
-  margin: 0.9rem 0 0;
-  max-width: 34rem;
-  font-size: 0.9rem;
-  line-height: 1.55;
-  color: var(--ink-2);
-}
-
-.offer {
-  list-style: none;
-  margin: 2rem 0 0;
-  padding: 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
-  gap: 1px;
-  background: var(--rule);
-  border: 1px solid var(--rule);
-}
-
-/* A contact sheet rather than a list of checkboxes. The reader is picking
-   headlines, so the headline is the control, and the gap being a hairline of
-   rule colour is what makes twelve of them read as one sheet. */
-.option {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
+.searchbox {
   width: 100%;
-  height: 100%;
-  padding: 1rem 0.9rem;
-  border: 0;
-  background: var(--paper);
-  cursor: pointer;
-  text-align: left;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  padding: 0.85rem 1rem;
+  background: var(--raise);
   color: var(--ink);
-  animation: rise 460ms cubic-bezier(0.2, 0.7, 0.3, 1) backwards;
-  animation-delay: calc(var(--i) * 35ms);
-  transition:
-    background-color 160ms ease,
-    color 160ms ease;
-}
-
-.option:hover:not(:disabled) {
-  background: var(--surface);
-}
-
-.option:disabled {
-  cursor: default;
-  opacity: 0.4;
-}
-
-/* Picked reads as an inked plate: the accent floods, the type reverses. It is
-   the same gesture the registration marks use elsewhere, which is what keeps
-   this screen part of the product instead of a form in front of it. */
-.option.is-picked,
-.option.is-picked:hover:not(:disabled) {
-  background: var(--reg);
-  color: var(--paper);
-}
-
-.option.is-picked:disabled {
-  opacity: 1;
-}
-
-.option-kicker {
-  font-family: var(--mono);
-  font-size: 0.62rem;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  opacity: 0.7;
-}
-
-.option-title {
   font-family: var(--display);
-  font-size: 1.05rem;
-  font-weight: 500;
-  line-height: 1.2;
+  font-size: 1.25rem;
+  transition: border-color 0.16s, box-shadow 0.16s;
 }
 
-.option-meta {
-  margin-top: auto;
-  padding-top: 0.4rem;
-  font-family: var(--mono);
-  font-size: 0.66rem;
-  opacity: 0.7;
-}
-
-.onboard-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.6rem;
-  margin-top: 1.75rem;
-}
-
-.action.is-quiet {
-  border-color: transparent;
+.searchbox::placeholder {
   color: var(--ink-2);
 }
 
-.action.is-quiet:hover {
-  border-color: var(--rule);
-  color: var(--ink);
+.searchbox:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--glow);
 }
 
-/* The one line that describes something happening right now rather than
-   something stored. It borrows the accent because a run is temporary and the
-   reader should be able to tell at a glance that this is not their profile. */
-.run {
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: 0.4rem;
-  margin: 1rem 0 0;
-  font-size: 0.85rem;
-  color: var(--ink-2);
-}
-
-.run b {
-  font-family: var(--mono);
-  font-weight: 500;
-  color: var(--ink);
-}
-
-.run-label {
-  font-size: 0.66rem;
-  font-weight: 600;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--reg);
-}
-
-/* The one badge on a card, and it earns the accent: a reserved slot is the
-   feed admitting it went looking outside what it knows about the reader. */
-.badge {
-  margin-right: 0.5rem;
-  padding: 0.08rem 0.35rem;
-  background: var(--reg);
-  color: var(--paper);
-  font-family: var(--ui);
-  font-weight: 600;
-  letter-spacing: 0.08em;
-}
-
-.slider {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  margin-top: 1rem;
-  font-size: 0.76rem;
-  color: var(--ink-2);
-}
-
-.slider input {
-  flex: 1 1 8rem;
-  max-width: 14rem;
-  accent-color: var(--reg);
-}
-
-.slider-value {
-  font-family: var(--mono);
-  font-size: 0.7rem;
-  color: var(--ink);
-  min-width: 8.5rem;
-}
-
-/* ---------- cards ---------- */
+/* ---------- list ---------- */
 
 .feed {
-  list-style: none;
   margin: 0;
   padding: 0;
+  list-style: none;
 }
 
+/* The 2rem gutter is fixed and the headline starts after it on every card, which
+   drops the counters into a single column and makes the rule one straight line
+   from the top of the list to the bottom. */
 .card {
   display: grid;
-  /* minmax(0, 1fr) rather than 1fr: a grid track's automatic minimum is its
-     content, so a long headline or a row of source plates widens the column
-     past the viewport instead of wrapping inside it. */
-  grid-template-columns: 2.75rem minmax(0, 1fr);
+  grid-template-columns: 2rem 1fr;
   column-gap: 1rem;
+  border-bottom: 1px solid var(--line);
   padding: 1.75rem 0;
-  border-bottom: 1px solid var(--rule);
-  animation: rise 520ms cubic-bezier(0.2, 0.7, 0.3, 1) backwards;
-  animation-delay: calc(var(--i) * 55ms);
+  animation: rise 0.5s cubic-bezier(0.2, 0.7, 0.3, 1) backwards;
+  animation-delay: calc(var(--i, 0) * 55ms);
 }
 
-.card.is-leaving {
-  opacity: 0;
-  transform: translateY(-6px);
-  transition:
-    opacity 220ms ease,
-    transform 220ms ease;
+@media (min-width: 60rem) {
+  .card {
+    column-gap: 1.5rem;
+  }
 }
 
 @keyframes rise {
@@ -500,143 +534,208 @@ body::before {
   }
 }
 
-/* Spans every row the card body can produce: kicker, headline, summary,
-   byline, the source plates, the reasons and the actions. */
+.card > *:not(.gutter) {
+  grid-column: 2;
+}
+
+.card.is-leaving {
+  opacity: 0;
+  transform: translateX(-14px);
+  transition: opacity 0.24s, transform 0.24s;
+}
+
+/* ---------- gutter: counter and rule ---------- */
+
+/* A span rather than `1 / -1`. Negative line numbers resolve against the
+   explicit grid, and the card declares no rows, so `-1` is line 1 and the gutter
+   collapses to the height of the kicker, leaving the rule nothing to grow into.
+   The row count is only a ceiling: the card never reaches eight children, and
+   the card sets no row gap, so the unused implicit rows cost nothing. */
 .gutter {
-  grid-row: 1 / span 7;
-  padding-top: 0.35rem;
+  grid-column: 1;
+  grid-row: 1 / span 12;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
 .mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  flex: none;
+  border: 1px solid var(--line);
+  border-radius: 50%;
   color: var(--ink-2);
-  overflow: visible;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  font-weight: 700;
+  transition: color 0.2s, border-color 0.2s;
 }
 
+/* A story several portals ran is the product's find, so it is the only thing in
+   the gutter that gets the accent. A single portal stays grey, and the difference
+   between the two states reads without reading the number. */
+.mark.is-many {
+  border-color: var(--accent);
+  color: var(--accent);
+  box-shadow: 0 0 0 3px var(--glow);
+}
+
+.spine {
+  width: 1px;
+  flex: 1;
+  margin-top: 0.75rem;
+  background: var(--spine);
+}
+
+.card:hover .spine {
+  background: var(--accent);
+}
+
+/* ---------- card body ---------- */
+
 .kicker {
-  margin: 0 0 0.45rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.5rem;
+  margin: 0 0 0.5rem;
+  color: var(--accent);
   font-family: var(--mono);
-  font-size: 0.66rem;
-  letter-spacing: 0.1em;
+  font-size: 0.688rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  line-height: 1.4;
   text-transform: uppercase;
-  color: var(--ink-2);
-  max-width: 30rem;
-  overflow-wrap: break-word;
+}
+
+.badge {
+  border: 1px solid var(--against);
+  border-radius: 2px;
+  padding: 0.15rem 0.4rem;
+  color: var(--against);
+  letter-spacing: 0.06em;
 }
 
 .headline {
   margin: 0;
   font-family: var(--display);
   font-size: 1.5rem;
-  font-weight: 500;
-  line-height: 1.16;
-  letter-spacing: -0.011em;
-  text-wrap: balance;
-  overflow-wrap: break-word;
-}
-
-.card.is-lead .headline {
-  font-size: clamp(1.95rem, 5.2vw, 2.85rem);
-  line-height: 1.04;
-  letter-spacing: -0.022em;
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
 }
 
 .headline a {
-  color: inherit;
+  color: var(--ink);
   text-decoration: none;
-  background-image: linear-gradient(var(--reg), var(--reg));
-  background-size: 0 1px;
-  background-position: 0 100%;
-  background-repeat: no-repeat;
-  transition: background-size 260ms ease;
+  transition: color 0.16s;
 }
 
 .headline a:hover {
-  background-size: 100% 1px;
+  color: var(--accent);
+}
+
+/* The first card is the lead. It is the only one that changes size, and on
+   desktop the difference is large enough to say which it is without a label. */
+.card.is-lead .headline {
+  font-size: 2rem;
+  font-weight: 700;
+  line-height: 1.15;
+}
+
+@media (min-width: 60rem) {
+  .card.is-lead .headline {
+    font-size: 2.75rem;
+    letter-spacing: -0.02em;
+  }
 }
 
 .summary {
   margin: 0.6rem 0 0;
-  max-width: 34rem;
-  font-size: 0.92rem;
-  line-height: 1.5;
   color: var(--ink-2);
-}
-
-.card.is-lead .summary {
-  font-size: 1rem;
+  font-size: 0.938rem;
+  line-height: 1.55;
 }
 
 .byline {
-  margin: 0.55rem 0 0;
-  font-family: var(--mono);
-  font-size: 0.74rem;
+  margin: 0.7rem 0 0;
   color: var(--ink-2);
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.04em;
 }
 
 .byline b {
-  font-weight: 500;
   color: var(--ink);
+  font-weight: 500;
 }
 
-/* ---------- the signature: plates coming into register ---------- */
+/* ---------- explanation panel ---------- */
+
+/* "Also in" and the reasons live in a closed block with its own border and fill,
+   because together they answer a single question: why is this card here. Loose at
+   the foot of the card they became two lines of grey metadata, which is the one
+   treatment the explanation cannot have in this product. */
+.meta {
+  margin-top: 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: var(--raise);
+}
 
 .register {
   display: flex;
-  align-items: baseline;
   flex-wrap: wrap;
-  gap: 0.3rem 0.55rem;
-  margin-top: 0.7rem;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.7rem 0.8rem;
 }
 
 .register-label {
-  font-size: 0.7rem;
+  color: var(--ink-2);
+  font-family: var(--mono);
+  font-size: 0.688rem;
   font-weight: 500;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--reg);
 }
 
 .plate {
-  font-family: var(--mono);
-  font-size: 0.72rem;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  padding: 0.2rem 0.45rem;
+  background: var(--bg);
   color: var(--ink);
-  padding: 0.1rem 0.4rem;
-  border: 1px solid var(--rule);
-  animation: register 620ms cubic-bezier(0.16, 0.9, 0.3, 1) backwards;
-  animation-delay: calc(var(--i) * 55ms + var(--p) * 90ms + 160ms);
-}
-
-/* Out of register, then aligned. The offset is the whole idea: separate plates
-   landing on one story. */
-@keyframes register {
-  from {
-    opacity: 0;
-    transform: translate(var(--dx), var(--dy));
-    border-color: var(--reg);
-  }
-  55% {
-    opacity: 1;
-  }
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  font-weight: 500;
 }
 
 .tally {
-  font-family: var(--mono);
-  font-size: 0.72rem;
   color: var(--ink-2);
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  font-weight: 500;
 }
 
-/* ---------- why this card is here ---------- */
-
-/* One grid for both rows rather than one per row, so the terms line up under
-   each other. The two directions are a comparison, and a comparison whose
-   columns do not meet is just two sentences. */
+/* The two reasons align in a column because they are a comparison. Labels of
+   different widths would push the terms to different positions, and then the
+   reader would have to hunt for what they should be able to weigh at a glance. */
 .reasons {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 0.2rem 0.5rem;
-  margin: 0.85rem 0 0;
-  padding-left: 0.75rem;
-  border-left: 1px solid var(--rule);
+  grid-template-columns: auto 1fr;
+  gap: 0.35rem 0.6rem;
+  margin: 0;
+  padding: 0.7rem 0.8rem;
+}
+
+.register + .reasons {
+  border-top: 1px solid var(--line);
 }
 
 .reason {
@@ -644,92 +743,150 @@ body::before {
 }
 
 .reason-label {
-  font-size: 0.7rem;
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
   color: var(--ink-2);
+  font-family: var(--mono);
+  font-size: 0.688rem;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
 }
 
-/* The direction is carried by a mark rather than by colour, because the one
-   accent this page has is already spoken for by the source plates, and a second
-   one would make neither mean anything. */
 .reason-label::before {
   content: '↑';
-  margin-right: 0.3rem;
-  font-family: var(--mono);
+  color: var(--accent);
+  font-weight: 700;
 }
 
-.is-against .reason-label::before {
+.reason.is-against .reason-label::before {
   content: '↓';
+  color: var(--against);
 }
 
 .reason-terms {
   margin: 0;
-  font-family: var(--mono);
-  font-size: 0.7rem;
   color: var(--ink);
-}
-
-.is-against .reason-terms {
-  color: var(--ink-2);
+  font-family: var(--mono);
+  font-size: 0.688rem;
+  font-weight: 500;
 }
 
 /* ---------- actions ---------- */
 
 .actions {
   display: flex;
-  gap: 0.5rem;
-  margin-top: 1rem;
+  gap: 1.25rem;
+  margin-top: 0.9rem;
 }
 
 .action {
-  font-family: var(--ui);
-  font-size: 0.76rem;
-  font-weight: 500;
-  color: var(--ink);
-  background: transparent;
-  border: 1px solid var(--rule);
-  padding: 0.4rem 0.85rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: 0;
+  padding: 0;
+  background: none;
   cursor: pointer;
-  transition:
-    border-color 160ms ease,
-    color 160ms ease;
+  color: var(--ink-2);
+  font-family: var(--mono);
+  font-size: 0.688rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  transition: color 0.16s;
 }
 
-.action:hover {
-  border-color: var(--ink);
+.action svg {
+  width: 15px;
+  height: 15px;
 }
 
-.action.is-keep:hover {
-  color: var(--reg);
-  border-color: var(--reg);
+.action.is-keep {
+  color: var(--accent);
+}
+
+.action:hover:not(:disabled) {
+  color: var(--against);
+}
+
+.action.is-keep:hover:not(:disabled) {
+  color: var(--ink);
 }
 
 .action:disabled {
-  cursor: default;
   opacity: 0.45;
+  cursor: default;
 }
 
-/* ---------- skeleton, empty, error ---------- */
+/* ---------- states ---------- */
+
+.notice {
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  padding: 2rem 1.25rem;
+  background: var(--raise);
+  text-align: center;
+}
+
+.notice-title {
+  margin: 0 0 0.5rem;
+  font-family: var(--display);
+  font-size: 1.375rem;
+  font-weight: 600;
+}
+
+.notice-body {
+  margin: 0 auto 1.25rem;
+  max-width: 32rem;
+  color: var(--ink-2);
+  font-size: 0.938rem;
+}
+
+.notice .action {
+  border: 1px solid var(--accent);
+  border-radius: 2px;
+  padding: 0.5rem 1rem;
+  color: var(--accent);
+}
+
+.notice .action:hover:not(:disabled) {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.more {
+  margin: 1.5rem 0 0;
+  color: var(--ink-2);
+  font-family: var(--mono);
+  font-size: 0.688rem;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-align: center;
+  text-transform: uppercase;
+}
 
 .bone {
-  background: linear-gradient(90deg, var(--sunk), var(--surface), var(--sunk));
-  background-size: 200% 100%;
-  animation: sweep 1.5s ease-in-out infinite;
+  border-radius: 2px;
+  background: var(--line-2);
+  animation: breathe 1.4s ease-in-out infinite;
 }
 
-@keyframes sweep {
-  to {
-    background-position: -200% 0;
+@keyframes breathe {
+  50% {
+    opacity: 0.45;
   }
 }
 
 .bone-kicker {
-  height: 0.55rem;
-  width: 5.5rem;
-  margin-bottom: 0.7rem;
+  width: 34%;
+  height: 0.688rem;
+  margin-bottom: 0.75rem;
 }
 
 .bone-line {
-  height: 1.15rem;
+  height: 1.5rem;
   margin-bottom: 0.5rem;
 }
 
@@ -738,54 +895,167 @@ body::before {
 }
 
 .bone-meta {
-  height: 0.6rem;
-  width: 9rem;
-  margin-top: 0.8rem;
+  width: 45%;
+  height: 0.75rem;
+  margin-top: 0.85rem;
 }
 
-.notice {
-  margin-top: 3rem;
-  padding-top: 2rem;
-  border-top: 2px solid var(--ink);
+/* ---------- onboarding ---------- */
+
+.onboard {
+  max-width: 44rem;
+  margin-inline: auto;
 }
 
-.notice-title {
-  margin: 0 0 0.5rem;
+.onboard-title {
+  margin: 0 0 0.75rem;
   font-family: var(--display);
-  font-size: 1.5rem;
-  font-weight: 500;
+  font-size: 2rem;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
 }
 
-.notice-body {
-  margin: 0 0 1rem;
+@media (min-width: 60rem) {
+  .onboard-title {
+    font-size: 2.75rem;
+  }
+}
+
+/* The verb carries the ask, so it is the one word that takes the accent. */
+.onboard-title span {
+  color: var(--accent);
+  font-style: italic;
+}
+
+.onboard-body {
+  margin: 0 0 2rem;
+  max-width: 34rem;
   color: var(--ink-2);
-  font-size: 0.9rem;
-  line-height: 1.5;
-  max-width: 32rem;
+  font-size: 1rem;
 }
 
-@media (max-width: 34rem) {
-  .card {
-    grid-template-columns: 1.75rem minmax(0, 1fr);
-    column-gap: 0.75rem;
-  }
+.offer {
+  display: grid;
+  gap: 0.6rem;
+  margin: 0 0 2rem;
+  padding: 0;
+  list-style: none;
+}
 
-  .shell {
-    padding-top: 1.75rem;
+@media (min-width: 48rem) {
+  .offer {
+    grid-template-columns: 1fr 1fr;
   }
 }
 
+.option {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  padding: 0.9rem;
+  background: var(--raise);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.16s, background 0.16s, transform 0.16s;
+  animation: rise 0.5s cubic-bezier(0.2, 0.7, 0.3, 1) backwards;
+  animation-delay: calc(var(--i, 0) * 40ms);
+}
+
+.option:hover {
+  border-color: var(--accent);
+  transform: translateY(-2px);
+}
+
+/* The picked state changes three things at once, border, fill and a rule down the
+   side, because the reader is choosing three out of twelve and has to see what is
+   already marked without counting again. */
+.option.is-picked {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.option-kicker {
+  display: block;
+  margin: 0 0 0.4rem;
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 0.688rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.option-title {
+  display: block;
+  margin: 0;
+  color: var(--ink);
+  font-family: var(--display);
+  font-size: 1.125rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.option-meta {
+  display: block;
+  margin: 0.5rem 0 0;
+  color: var(--ink-2);
+  font-family: var(--mono);
+  font-size: 0.688rem;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+}
+
+.onboard-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1.25rem;
+}
+
+.onboard-actions .action {
+  border: 1px solid var(--accent);
+  border-radius: 2px;
+  padding: 0.6rem 1.1rem;
+  background: var(--accent);
+  color: var(--bg);
+}
+
+.onboard-actions .action:hover:not(:disabled) {
+  background: transparent;
+  color: var(--accent);
+}
+
+/* Skipping has to look like a legitimate path, so it is a real link and not faded
+   text in a corner. Hiding the way out would be designing against the reader. */
+.onboard-actions .action.is-quiet {
+  border: 0;
+  padding: 0;
+  background: none;
+  color: var(--ink-2);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.onboard-actions .action.is-quiet:hover:not(:disabled) {
+  color: var(--accent);
+}
+
+/* The delay has to go with the duration. The reveal fills backwards, so a card
+   still holding a stagger is a card sitting at opacity zero: cutting only the
+   duration leaves the tail of the list blank for the length of the stagger,
+   which is the opposite of what asking for less motion is asking for. */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
   *::after {
     animation-duration: 0.01ms !important;
-    /* The delay has to go too. The reveal fills backwards, so a card or a
-       source plate holds its opening state, invisible, for as long as its
-       stagger lasts. Killing only the duration would leave a reader who asked
-       for less motion watching the feed appear in pieces anyway. */
     animation-delay: 0ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+    transition-delay: 0ms !important;
   }
 }

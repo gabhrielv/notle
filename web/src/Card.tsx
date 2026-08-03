@@ -3,39 +3,49 @@ import type { Card as CardData, Signal } from './api'
 import { sayAge } from './api'
 
 /**
- * A printer's registration mark, one ring per portal that ran the story.
+ * How many portals ran the story, as a number in the left gutter.
  *
- * The extra rings sit off centre on purpose. Misregistration is what a press
- * produces when plates do not line up, and several portals landing on one event
- * is exactly the thing this feed is built to show.
+ * A drawn symbol was tried first and failed at the only job it had: a reader
+ * cannot tell three rings from four without stopping to count them, and the
+ * whole point of putting this in the gutter is that it reads at a glance while
+ * scrolling. The digit says it outright, and the accent ring separates the one
+ * case that matters, which is several portals landing on the same event.
+ *
+ * The rule below it joins the counters into a continuous line down the list, so
+ * the column reads as a scale rather than as a stack of loose badges.
  */
 function Mark({ plates }: { plates: number }) {
-  const offsets = [
-    [1.8, -1.4],
-    [-1.6, 1.5],
-  ]
-  const extra = Math.min(plates - 1, offsets.length)
-
   return (
-    <svg className="mark" viewBox="0 0 26 26" width="26" height="26" aria-hidden="true">
-      {Array.from({ length: extra }, (_, i) => (
-        <circle
-          key={i}
-          cx={13 + offsets[i][0]}
-          cy={13 + offsets[i][1]}
-          r="7"
-          fill="none"
-          stroke="var(--reg)"
-          strokeWidth="1"
-          opacity="0.8"
-        />
-      ))}
-      <circle cx="13" cy="13" r="7" fill="none" stroke="currentColor" strokeWidth="1" />
+    <>
+      <span
+        className={`mark${plates > 1 ? ' is-many' : ''}`}
+        aria-label={`${plates} ${plates === 1 ? 'portal' : 'portais'}`}
+      >
+        {plates}
+      </span>
+      <span className="spine" aria-hidden="true" />
+    </>
+  )
+}
+
+/** Inline rather than an icon font, because the app has to render offline. */
+function IconKeep() {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M8 3v10M3 8h10" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+function IconHide() {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
       <path
-        d="M13 1.5v4M13 20.5v4M1.5 13h4M20.5 13h4"
+        d="M2 8s2.4-4 6-4 6 4 6 4-2.4 4-6 4-6-4-6-4Z"
         stroke="currentColor"
-        strokeWidth="1"
+        strokeWidth="1.4"
       />
+      <path d="M3 13 13 3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
     </svg>
   )
 }
@@ -139,6 +149,9 @@ export function Card({
   // portal against itself is not.
   const repeats = card.size - 1
 
+  const hasRegister = others.length > 0 || repeats > 0
+  const hasReasons = card.because.length > 0 || card.against.length > 0
+
   return (
     <li
       ref={ref}
@@ -181,54 +194,51 @@ export function Card({
         <b>{card.source}</b> · {sayAge(card.published_at)}
       </p>
 
-      {others.length > 0 ? (
-        <div className="register">
-          <span className="register-label">também em</span>
-          {others.map((name, i) => (
-            <span
-              key={name}
-              className="plate"
-              style={
-                {
-                  '--p': i,
-                  '--dx': `${i % 2 === 0 ? 5 : -4}px`,
-                  '--dy': `${i % 2 === 0 ? -3 : 4}px`,
-                } as React.CSSProperties
-              }
-            >
-              {name}
-            </span>
-          ))}
-        </div>
-      ) : (
-        repeats > 0 && (
-          <div className="register">
-            <span className="tally">
-              mais {repeats} {repeats === 1 ? 'matéria' : 'matérias'} no {card.source}
-            </span>
-          </div>
-        )
-      )}
+      {/* One panel, because "also in" and the two reasons answer a single
+          question: why is this card here. Left loose at the foot of the card
+          they read as trailing grey metadata, which is the one treatment the
+          explanation cannot have in this product. */}
+      {(hasRegister || hasReasons) && (
+        <div className="meta">
+          {others.length > 0 ? (
+            <div className="register">
+              <span className="register-label">também em</span>
+              {others.map((name) => (
+                <span key={name} className="plate">
+                  {name}
+                </span>
+              ))}
+            </div>
+          ) : (
+            repeats > 0 && (
+              <div className="register">
+                <span className="tally">
+                  mais {repeats} {repeats === 1 ? 'matéria' : 'matérias'} no {card.source}
+                </span>
+              </div>
+            )
+          )}
 
-      {/* Why this card sits where it does, in both directions and only when
-          there is something to say. The terms come from the same aggregation
-          that produced the score, so this is the arithmetic of the position
-          rather than a description written next to it. */}
-      {(card.because.length > 0 || card.against.length > 0) && (
-        <dl className="reasons">
-          {card.because.length > 0 && (
-            <div className="reason">
-              <dt className="reason-label">porque você acompanha</dt>
-              <dd className="reason-terms">{card.because.join(' · ')}</dd>
-            </div>
+          {/* The terms come from the same aggregation that produced the score,
+              so this is the arithmetic of the position rather than a
+              description written next to it. */}
+          {hasReasons && (
+            <dl className="reasons">
+              {card.because.length > 0 && (
+                <div className="reason">
+                  <dt className="reason-label">porque você acompanha</dt>
+                  <dd className="reason-terms">{card.because.join(' · ')}</dd>
+                </div>
+              )}
+              {card.against.length > 0 && (
+                <div className="reason is-against">
+                  <dt className="reason-label">porque você escondeu</dt>
+                  <dd className="reason-terms">{card.against.join(' · ')}</dd>
+                </div>
+              )}
+            </dl>
           )}
-          {card.against.length > 0 && (
-            <div className="reason is-against">
-              <dt className="reason-label">porque você escondeu</dt>
-              <dd className="reason-terms">{card.against.join(' · ')}</dd>
-            </div>
-          )}
-        </dl>
+        </div>
       )}
 
       {canAct && (
@@ -239,6 +249,7 @@ export function Card({
             disabled={busy}
             onClick={() => onAct(card.cluster_id, 'like')}
           >
+            <IconKeep />
             Interessa
           </button>
           <button
@@ -247,6 +258,7 @@ export function Card({
             disabled={busy}
             onClick={() => onAct(card.cluster_id, 'hide')}
           >
+            <IconHide />
             Ocultar
           </button>
         </div>

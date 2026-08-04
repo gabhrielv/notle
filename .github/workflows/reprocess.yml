@@ -24,7 +24,19 @@ concurrency:
 jobs:
   reprocess:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # O teto tem que ficar à frente do acervo, e ele não estava. As passadas de
+    # escrita foram de 30 min, depois 46, depois 53m51s contra este limite de 60,
+    # porque o custo cresce com o corpus e o corpus só cresce.
+    #
+    # O lugar ruim de ser interrompido é específico: `recount` apaga `terms` e
+    # reinsere em lotes, no fim da execução. Cortada ali, a tabela fica
+    # parcialmente populada e o IDF sai errado para o acervo inteiro, o que o
+    # feed serve sem nada na tela dizendo que a régua quebrou.
+    #
+    # Medido de onde o tempo vem: a passada de spaCy sobre 5903 artigos leva
+    # 1m26s, e todo o resto são as escritas no D1. Então o teto acompanha o
+    # número de linhas escritas, não o modelo de linguagem.
+    timeout-minutes: 90
 
     steps:
       - uses: actions/checkout@v4

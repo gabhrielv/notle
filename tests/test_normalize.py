@@ -7,7 +7,16 @@ returns what the test told it to.
 
 import pytest
 
-from ingest.normalize import _nlp, lemmatize, term_frequencies
+from ingest.normalize import (
+    SurfaceVotes,
+    _nlp,
+    canonical_map,
+    canonize,
+    lemmatize,
+    occurrences,
+    tally,
+    term_frequencies,
+)
 
 
 class TestLemmatize:
@@ -218,3 +227,119 @@ class TestTermFrequencies:
     def test_empty_input_yields_empty_vector(self):
         """A headline that normalizes to nothing must not divide by zero."""
         assert term_frequencies([]) == {}
+
+
+class TestOccurrences:
+    def test_the_first_word_of_the_text_opens_a_sentence(self):
+        found = occurrences("Petrobras anuncia lucro recorde")
+
+        assert found[0].opens_sentence
+        assert not any(other.opens_sentence for other in found[1:])
+
+    def test_the_word_after_a_full_stop_opens_a_sentence(self):
+        """The parser is disabled, so spaCy segments nothing and marks only the
+        very first token. The pipeline hands this function `title. summary`, so
+        the word this misses would be the first word of every summary.
+        """
+        found = occurrences("Lucro recorde. Equipes celebram o resultado")
+        opening = [x.surface for x in found if x.opens_sentence]
+
+        assert opening == ["lucro", "equipes"]
+
+    def test_a_comma_does_not_open_a_sentence(self):
+        found = occurrences("Recife registrou chuva, equipes de resgate chegaram")
+
+        assert [x.surface for x in found if x.opens_sentence] == ["recife"]
+
+    def test_a_word_the_article_precedes_is_not_at_an_opening(self):
+        """`A Petrobras anunciou` reads correctly precisely because the article
+        takes the opening and the name sits inside the sentence. The flag has to
+        be spent by the determiner even though the determiner is discarded.
+        """
+        found = occurrences("A Petrobras anunciou lucro")
+
+        assert not any(x.opens_sentence for x in found)
+
+    def test_surface_is_lowercased_so_position_does_not_split_the_key(self):
+        """The capital is the accident being corrected for, so the word opening
+        a headline has to land in the same bucket as the same word inside one.
+        """
+        opening = occurrences("Equipes de resgate chegaram")
+        inside = occurrences("As equipes de resgate chegaram")
+
+        assert opening[0].surface == "equipes"
+        assert [x for x in inside if x.surface == "equipes"]
+
+    def test_lemmatize_returns_the_same_lemmas_as_before(self):
+        assert lemmatize("As eleições municipais foram adiadas") == [
+            found.lemma for found in occurrences("As eleições municipais foram adiadas")
+        ]
+
+
+class TestCanonicalMap:
+    def poll(self, *texts, language="pt"):
+        votes: dict[str, SurfaceVotes] = {}
+        for text in texts:
+            tally(votes, occurrences(text, language))
+        return votes
+
+    def test_only_readings_taken_mid_sentence_vote(self):
+        """Letting the opening vote would be asking the error to confirm itself."""
+        votes = self.poll("Equipes de resgate chegaram ao local")
+
+        assert "equipes" not in votes
+
+    def test_a_written_word_needs_more_than_one_reading_to_decide(self):
+        """`chance` came back as `chancer` on its single settled occurrence in
+        the headline corpus. One observation electing a canonical form unopposed
+        is how a common word acquires an invented lemma.
+        """
+        once = self.poll("Houve uma chance real")
+
+        assert canonical_map(once) == {}
+
+    def test_a_word_only_ever_seen_opening_a_sentence_gets_no_entry(self):
+        votes = self.poll(*["Equipes chegaram" for _ in range(5)])
+
+        assert "equipes" not in canonical_map(votes)
+
+    def test_different_written_words_never_merge(self):
+        """The protection that a rule matching `X` against `Xs` has to work for,
+        and that three variants against entity recognition failed to get. `deu`
+        and `deus` are separate strings on the page, so no count can bring them
+        together.
+        """
+        votes = self.poll(
+            "Ele deu a resposta certa",
+            "Ela deu o troco exato",
+            "O juiz deu a sentença",
+            "A fé em Deus move o grupo",
+            "O templo de Deus foi restaurado",
+            "A palavra de Deus foi lida",
+        )
+        canonical = canonical_map(votes)
+
+        assert canonical.get("deus") != canonical.get("deu")
+        assert canonical.get("deus") not in {"dar", "deu"}
+
+    def test_nothing_mid_sentence_is_ever_rewritten(self):
+        """A wrong entry can reach only the openings of one written word, never
+        every occurrence of a term.
+        """
+        found = occurrences("As equipes de resgate chegaram")
+        lemmas = canonize(found, {"equipes": "coisa-nenhuma"})
+
+        assert "coisa-nenhuma" not in lemmas
+
+    def test_an_opening_is_held_to_what_the_corpus_settled_on(self):
+        found = occurrences("Equipes de resgate chegaram")
+        lemmas = canonize(found, {"equipes": "equipe"})
+
+        assert "equipe" in lemmas
+        assert "equipes" not in lemmas
+
+    def test_an_empty_map_leaves_every_lemma_alone(self):
+        """The state before the reprocessing has ever run."""
+        found = occurrences("Equipes de resgate chegaram")
+
+        assert canonize(found, {}) == [x.lemma for x in found]

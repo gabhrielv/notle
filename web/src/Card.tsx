@@ -143,15 +143,15 @@ export function Card({
       {(card.about.length > 0 || card.discovery) && (
         <p className="kicker">
           {/* The badge promises exactly what the ranking measured and nothing
-              more. It is shown when the strongest terms of the profile
-              contribute nothing at all to this story, so that is what it says
-              on hover. It used to read "você nunca leu sobre isso", which is a
-              claim about the reader that the number underneath never
-              supported. */}
+              more. It is shown when coverage is what lifted the story, which
+              means the strongest terms of the profile contributed nothing and
+              more than one portal ran it, so that is what it says on hover.
+              `others` is `card.also_in`, so the count here is the same number
+              the removed gutter column used to draw. */}
           {card.discovery && (
             <span
               className="badge"
-              title="Os termos mais fortes do seu perfil não dizem nada sobre esta matéria"
+              title={`Saiu em ${others.length + 1} portais, e nenhum dos seus termos mais fortes aparece aqui`}
             >
               descoberta
             </span>

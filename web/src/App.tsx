@@ -340,10 +340,13 @@ function FeedView() {
               aria-label="Quanto do feed é reservado a descoberta"
             />
             <span>descoberta</span>
+            {/* No percentage any more: it described a quota of reserved
+                positions that no longer exists. Coverage competes in the score
+                now, so how many stories arrive that way depends on the day. */}
             <span className="slider-value">
               {ratio === 0
-                ? 'nenhum slot reservado'
-                : `${Math.round(ratio * 100)}% dos slots`}
+                ? 'só o seu gosto ordena o feed'
+                : 'matéria muito coberta sobe mesmo sem combinar com você'}
             </span>
           </label>
         )}

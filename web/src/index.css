@@ -368,12 +368,16 @@ body {
   text-transform: uppercase;
 }
 
+/* The accent goes on discovery and not on the bubble. It had them the other way
+   round, which painted the bubble as the thing the system asserts and discovery
+   in `--against`, the tone this sheet reserves for the negative reason and for
+   hiding. The screen was arguing the opposite of the product. */
 .slider > span:first-child {
-  color: var(--accent);
+  color: var(--ink-2);
 }
 
 .slider > span:nth-child(3) {
-  color: var(--against);
+  color: var(--accent);
 }
 
 .slider-value {
@@ -555,11 +559,18 @@ body {
   text-transform: uppercase;
 }
 
+/* Filled rather than outlined, and this is a correction. The badge lives inside
+   `.kicker`, which is already the accent, so an outlined badge in a second
+   accent tone is a badge that disappears into the line of terms beside it. It
+   read as a different thing while the accent was cool and the outline warm, and
+   stopped reading as anything once the accent turned crimson. A solid ground is
+   what makes it a badge instead of one more term. */
 .badge {
-  border: 1px solid var(--against);
+  border: 0;
   border-radius: 2px;
   padding: 0.15rem 0.4rem;
-  color: var(--against);
+  background: var(--accent);
+  color: var(--bg);
   letter-spacing: 0.06em;
 }
 

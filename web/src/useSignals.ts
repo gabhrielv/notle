@@ -1,13 +1,11 @@
 import { useCallback, useEffect, useRef } from 'react'
 import { sendSignals } from './api'
 import { sessionId } from './session'
+import { makeQueue } from './signalQueue'
 import type { SignalEvent } from './api'
 
 /** How long a batch may sit before it goes, so a quiet reader is still recorded. */
 const FLUSH_EVERY_MS = 8000
-
-/** Past this the queue goes early, rather than growing with a long scroll. */
-const FLUSH_AT = 20
 
 /**
  * Below this a card was scrolled past, not looked at. Without a floor, flinging
@@ -29,27 +27,22 @@ const SEEN_FOR_MS = 1000
  * honour.
  */
 export function useSignals(active: boolean) {
-  const queue = useRef<SignalEvent[]>([])
   const session = useRef(sessionId())
+  const queue = useRef(
+    makeQueue((events, beacon) => sendSignals(session.current, events, beacon)),
+  )
   // What the reader clicked through to, and when. Kept in a ref because the
   // answer arrives in a visibility event that has no idea a click happened.
   const away = useRef<{ cluster: number; left: number } | null>(null)
 
-  const flush = useCallback((beacon = false) => {
-    const events = queue.current
-    if (!events.length) return
-
-    queue.current = []
-    sendSignals(session.current, events, beacon)
-  }, [])
+  const flush = useCallback((beacon = false) => queue.current.flush(beacon), [])
 
   const push = useCallback(
     (event: SignalEvent) => {
       if (!active) return
       queue.current.push(event)
-      if (queue.current.length >= FLUSH_AT) flush()
     },
-    [active, flush],
+    [active],
   )
 
   useEffect(() => {
@@ -121,5 +114,5 @@ export function useSignals(active: boolean) {
     [push],
   )
 
-  return { seen, clicked }
+  return { seen, clicked, flush }
 }

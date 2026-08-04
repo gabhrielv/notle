@@ -29,6 +29,10 @@ class Constants:
     w_coocor: float = scoring.W_COOCOR
     session_cap: float = 0.35
     half_life: float = scoring.HALF_LIFE_HOURS
+    # Where the reader put the bubble slider. Zero is the shipped default and the
+    # value every earlier sweep was run at, so leaving it here keeps those
+    # results comparable.
+    discovery_ratio: float = 0.0
 
     def decay(self, age_hours: float) -> float:
         return 0.5 ** (max(age_hours, 0.0) / self.half_life)
@@ -113,11 +117,19 @@ def rank(reader: Reader, snapshot, constants: Constants, now_hours: float) -> li
         adjacent = cosine(nearby, item)
         age = max(now_hours - _age(card["published_at"]), 0.0)
 
+        lift = scoring.discovery_lift(
+            affinity, card.get("sources", 1), constants.discovery_ratio
+        )
         value = (
-            scoring.W_GOSTO * affinity + constants.w_coocor * adjacent + constants.w_recencia
+            scoring.W_GOSTO * affinity
+            + constants.w_coocor * adjacent
+            + constants.w_recencia
+            + lift
         ) * constants.decay(age) - constants.beta * penalty
 
-        scored.append({**card, "cluster_id": cluster_id, "score": value})
+        scored.append(
+            {**card, "cluster_id": cluster_id, "score": value, "discovery": lift > 0}
+        )
 
     scored.sort(key=lambda card: -card["score"])
     return scored[:PAGE]

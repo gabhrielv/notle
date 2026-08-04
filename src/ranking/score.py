@@ -141,13 +141,35 @@ W_COOCOR = 0.25
 #
 # The value has the same kind of stated reading the others have:
 #
-#     At the top of the slider, each portal beyond the first is worth one half
+#     At the top of the slider, two portals beyond the first are worth one half
 #     life of freshness.
 #
-# Which is why it is 0.08: `0.08 * 0.5 * 1` is `W_RECENCIA`, and `W_RECENCIA` is
+# Which is why it is 0.04: `0.04 * 0.5 * 2` is `W_RECENCIA`, and `W_RECENCIA` is
 # defined as the affinity worth one half life. The reading is what makes the
 # number arguable rather than arbitrary.
-W_DESCOBERTA = 0.08
+#
+# It was 0.08 first, on the tidier reading that one portal was worth one half
+# life, and the persona simulator refused it. At the top of the slider that value
+# does not tilt the page, it takes it: all 24 cards arrive by coverage and
+# precision falls to exactly zero, meaning the reader finds nothing they came
+# for. The 0.5 cap exists so that the far end of the control is strong, not so
+# that taste stops existing there.
+#
+# Swept against the simulator, with the peak over eight rounds and how much of
+# the first page arrived by coverage:
+#
+#     W_DESCOBERTA   peak at the cap   marked of 24
+#          0.08           0.00              24
+#          0.04           0.54              11
+#          0.02           0.50               7
+#          0.01           0.54               3
+#
+# 0.04 is the largest value that does not collapse. The differences among the
+# survivors are one card in twenty four and are read as noise, not as evidence
+# that discovery improves precision: a measure that rewards convergence cannot
+# reward discovery, which is what this document already records for W_COOCOR.
+# What the sweep settles is the distance between collapsing and not.
+W_DESCOBERTA = 0.04
 
 # News dies in 48 hours. At a 12 hour half life a story from two days ago carries
 # 6% of the weight of one from now, which is small enough to keep the feed from

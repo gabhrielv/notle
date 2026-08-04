@@ -315,15 +315,19 @@ class TestDiscoveryLift:
         """
         assert discovery_lift(0.0001, 4, 0.5) == 0.0
 
-    def test_at_the_top_of_the_slider_one_extra_portal_is_worth_one_half_life(self):
-        """The stated reading of the constant, and the whole reason it is 0.08.
-        `W_RECENCIA` is the affinity worth one half life, so this says a second
+    def test_at_the_top_of_the_slider_two_extra_portals_are_worth_one_half_life(self):
+        """The stated reading of the constant, and the whole reason it is 0.04.
+        `W_RECENCIA` is the affinity worth one half life, so this says a third
         portal buys exactly as much as being one half life fresher.
+
+        One portal for one half life was the first reading, and the simulator
+        refused it: at the top of the slider every card on the page arrived by
+        coverage and precision fell to zero.
         """
-        assert discovery_lift(0.0, 2, 0.5) == pytest.approx(W_RECENCIA)
+        assert discovery_lift(0.0, 3, 0.5) == pytest.approx(W_RECENCIA)
 
     def test_the_constant_is_what_that_reading_requires(self):
-        assert W_DESCOBERTA * 0.5 == pytest.approx(W_RECENCIA)
+        assert W_DESCOBERTA * 0.5 * 2 == pytest.approx(W_RECENCIA)
 
     def test_more_portals_lift_more(self):
         assert discovery_lift(0.0, 4, 0.5) > discovery_lift(0.0, 2, 0.5)

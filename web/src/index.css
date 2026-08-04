@@ -29,13 +29,13 @@
   --sink: #e9ebf2;
   --ink: #14161c;
   --ink-2: #565b6b;
-  --accent: #3a4bd0;
-  --accent-soft: #dfe3ff;
+  --accent: #c4005c;
+  --accent-soft: #ffdfee;
   --against: #b8330f;
   --line: rgba(20, 22, 28, 0.14);
   --line-2: rgba(20, 22, 28, 0.07);
   --spine: rgba(20, 22, 28, 0.22);
-  --glow: rgba(58, 75, 208, 0.1);
+  --glow: rgba(196, 0, 92, 0.1);
 
   --display: 'Newsreader', Georgia, serif;
   --ui: 'Work Sans', system-ui, sans-serif;
@@ -57,13 +57,13 @@
     --sink: #0c0e0e;
     --ink: #e2e2e2;
     --ink-2: #9a9ca6;
-    --accent: #b9c3ff;
-    --accent-soft: #262a3d;
+    --accent: #ff4d93;
+    --accent-soft: #3d262f;
     --against: #ffb4a2;
     --line: #3a3d47;
     --line-2: rgba(226, 226, 226, 0.08);
     --spine: #4c505e;
-    --glow: rgba(185, 195, 255, 0.12);
+    --glow: rgba(255, 77, 147, 0.12);
     color-scheme: dark;
   }
 }
@@ -74,13 +74,13 @@
   --sink: #0c0e0e;
   --ink: #e2e2e2;
   --ink-2: #9a9ca6;
-  --accent: #b9c3ff;
-  --accent-soft: #262a3d;
+  --accent: #ff4d93;
+  --accent-soft: #3d262f;
   --against: #ffb4a2;
   --line: #3a3d47;
   --line-2: rgba(226, 226, 226, 0.08);
   --spine: #4c505e;
-  --glow: rgba(185, 195, 255, 0.12);
+  --glow: rgba(255, 77, 147, 0.12);
   color-scheme: dark;
 }
 
@@ -200,12 +200,15 @@ body {
   }
 }
 
+/* The name in ink and the full stop in the accent, which is the way round the
+   first version had it. Inverted, the accent stopped being a mark and became
+   the whole word, and the one red thing on the screen was gone. */
 .wordmark {
   border: 0;
   padding: 0;
   background: none;
   cursor: pointer;
-  color: var(--accent);
+  color: var(--ink);
   font-family: var(--display);
   font-size: 1.5rem;
   font-weight: 700;
@@ -214,7 +217,7 @@ body {
 }
 
 .wordmark span {
-  color: var(--ink-2);
+  color: var(--accent);
 }
 
 .rail .wordmark {

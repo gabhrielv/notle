@@ -3,8 +3,11 @@
 A subject never touched has a cosine near zero, so it never rises, so it is never
 shown, so it can never be liked, so it never enters the profile. That is
 arithmetic rather than an opinion, and these are the two things that break it:
-reaching along edges the corpus drew, and reserving slots outright.
+reaching along edges the corpus drew, and letting coverage across portals lift
+what the profile has no opinion about.
 """
+
+from datetime import UTC, datetime
 
 from api import expand, feed
 from ingest import cooccurrence
@@ -97,75 +100,58 @@ class TestExpanded:
     def test_a_reader_who_has_said_nothing_reaches_nothing(self):
         assert expand.expanded({}, self.EDGES) == {}
 
+class TestDiscoveryOnThePage:
+    """The badge follows the news now, not the slider."""
 
-class TestInterleave:
-    def card(self, cluster_id, similarity, sources=3):
-        return {"cluster_id": cluster_id, "similarity": similarity, "sources": sources}
+    def rows(self, sources):
+        """Candidates that differ only in how many portals ran them."""
+        return [
+            {
+                "cluster_id": i,
+                "base_score": 0.0,
+                "norm": 1.0,
+                "published_at": "2026-07-31T11:00:00Z",
+                "top_terms": "[]",
+                "sources": n,
+            }
+            for i, n in enumerate(sources)
+        ]
 
-    def everything(self):
-        ranked = [self.card(i, 0.2) for i in range(40)]
-        surprises = [self.card(100 + i, 0.0) for i in range(10)]
-        return ranked + surprises
+    def page(self, sources, ratio):
+        return feed.scored(
+            self.rows(sources),
+            {},
+            0.0,
+            set(),
+            datetime(2026, 7, 31, 12, tzinfo=UTC),
+            discovery_ratio=ratio,
+        )
 
-    def test_no_slider_means_no_reserved_slots(self):
-        page = feed.interleave(self.everything(), 0.0, 0)
-
-        assert all(not card.get("discovery") for card in page)
-        assert len(page) == feed.PAGE
-
-    def test_a_share_of_the_page_goes_to_what_the_profile_ignored(self):
-        page = feed.interleave(self.everything(), 0.25, 0)
-        reserved = [card for card in page if card["discovery"]]
-
-        assert len(reserved) == feed.PAGE // 4
-        assert all(card["similarity"] == 0.0 for card in reserved)
-
-    def test_a_story_the_profile_has_any_opinion_about_is_not_a_discovery(self):
-        """The badge tells the reader the profile's strongest terms say nothing
-        about this story, so any contribution at all disqualifies it.
-
-        A ceiling here instead of zero was comparing two rulers. `similarity` is
-        completed from a dot product over the twenty terms the query binds, not
-        against the whole profile, while the ceiling of 0.011 had been read off
-        the true cosine. Measured over twenty profiles on the live window, 26% of
-        the cards that took a reserved slot had a true cosine above that ceiling.
-        """
-        faint = [self.card(200 + i, 0.0001) for i in range(10)]
-        page = feed.interleave([self.card(i, 0.2) for i in range(40)] + faint, 0.25, 0)
+    def test_a_reader_who_asked_for_none_sees_none(self):
+        page = self.page([1, 2, 3, 4], 0.0)
 
         assert not any(card["discovery"] for card in page)
 
-    def test_reserved_slots_are_spread_through_the_page(self):
-        """Collected at the end they would be a section the reader learns to
-        skip, which fails the same way as not reserving them.
+    def test_only_what_several_portals_ran_is_marked(self):
+        page = self.page([1, 1, 3, 4], 0.5)
+        marked = {card["cluster_id"] for card in page if card["discovery"]}
+
+        assert marked == {2, 3}
+
+    def test_the_count_follows_the_window_rather_than_the_slider(self):
+        """The whole point. The same slider over a day with no coverage marks
+        nothing, where the old quota would have filled half the page regardless.
         """
-        page = feed.interleave(self.everything(), 0.25, 0)
-        positions = [i for i, card in enumerate(page) if card["discovery"]]
+        assert sum(c["discovery"] for c in self.page([1, 1, 1, 1], 0.5)) == 0
+        assert sum(c["discovery"] for c in self.page([2, 2, 2, 2], 0.5)) == 4
 
-        assert max(positions) - min(positions) > feed.PAGE // 2
+    def test_coverage_lifts_a_stranger_above_a_stranger(self):
+        page = self.page([1, 4], 0.5)
 
-    def test_an_obscure_story_does_not_take_a_slot(self):
-        """A slot spent on something no other portal ran teaches the reader to
-        ignore the badge.
-        """
-        pool = [self.card(i, 0.2) for i in range(40)]
-        pool += [self.card(100 + i, 0.0, sources=1) for i in range(10)]
+        assert page[0]["cluster_id"] == 1
 
-        page = feed.interleave(pool, 0.25, 0)
+    def test_interleave_now_only_cuts_the_page(self):
+        everything = [{"cluster_id": i} for i in range(40)]
 
-        assert all(not card["discovery"] for card in page)
-
-    def test_a_slot_with_nothing_to_put_in_it_returns_to_the_ranking(self):
-        """A promise of discovery is not a reason to show worse news."""
-        pool = [self.card(i, 0.2) for i in range(40)]
-
-        page = feed.interleave(pool, 0.25, 0)
-
-        assert len(page) == feed.PAGE
-
-    def test_the_second_page_does_not_repeat_the_first(self):
-        everything = self.everything()
-        first = feed.interleave(everything, 0.25, 0)
-        second = feed.interleave(everything, 0.25, feed.PAGE)
-
-        assert not {c["cluster_id"] for c in first} & {c["cluster_id"] for c in second}
+        assert feed.interleave(everything, 0) == everything[: feed.PAGE]
+        assert feed.interleave(everything, feed.PAGE)[0]["cluster_id"] == feed.PAGE

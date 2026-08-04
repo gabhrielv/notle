@@ -60,6 +60,7 @@ articles         id, source_id FK, cluster_id FK, title, summary,
 
 terms            term PK, doc_count
 corpus_stats     total_docs
+term_canonical   surface PK, canonical        -- votada pelo reprocessamento
 
 article_terms    article_id FK, term, tf        -- PK (article_id, term), índice em term
 term_cooccur     term_a, term_b, score          -- índice em term_a
@@ -113,6 +114,59 @@ flowchart TD
 ```
 
 **Lematização, não stemming.** Português é muito flexionado: sem tratamento, `eleição` e `eleições` viram termos distintos que nunca se encontram, cada um com metade da massa e IDF inflado. Stemmer agressivo resolve o casamento mas produz `eleic`, e como a tela precisa exibir o termo pro usuário, isso quebraria a explicabilidade que é o motivo do projeto existir. O lema já é palavra real, então serve de chave interna e de texto de tela sem tabela de tradução.
+
+### Termos partidos, e os dois caminhos que não resolvem
+
+A lematização acerta a maior parte do tempo e erra de um jeito específico: o mesmo texto escrito é lido de um jeito na cabeça da frase e de outro dentro dela, porque ali a maiúscula é obrigatória pela posição e não informa nada. Manchete brasileira abre com o sujeito, então isso cai justamente nos nomes de que o feed trata.
+
+| escrito | abrindo frase | no meio da frase |
+|---|---|---|
+| `Petrobras` | `petrobra`, substantivo comum | `petrobras`, nome próprio |
+| `equipes` | `equipes` | `equipe` |
+| `vitimas` | `vitimas` | `vitima` |
+| `Ferias` | `feria` | `ferias` |
+
+O corpus fica com dois termos para uma coisa só, cada um com metade da massa e IDF inflado, e eles nunca se encontram. Medido sobre o retrato de 3121 documentos: 305 pares do tipo X/Xs, com 595 documentos no lado menor.
+
+**Regra de entidade não resolve, e isso está registrado para ninguém tentar de novo.** Estender a regra de fusão de entidades para spans de um token foi implementado em três variantes e medido sobre 500 artigos:
+
+| variante | pares X/Xs restantes |
+|---|---|
+| comportamento original | 55 |
+| toda entidade de um token | 58 |
+| só quando é nome próprio | 54, e não conserta `petrobras` |
+| só quando o lema truncou a superfície | 58 |
+
+Nenhuma melhora, porque a causa não está na guarda do merge. Está no etiquetador, e as três variantes mexem em outro lugar.
+
+**Semelhança de contexto também não resolve, por um motivo mais fundo.** A ideia seguinte foi colapsar um par só quando os dois lados aparecem em artigos parecidos, o que separaria `llm` de `llms` sem juntar `deu` com `deus`. Medida de duas formas e as duas falharam:
+
+- Por vizinhança de `term_cooccur`: dos 305 pares, só **7** têm vizinho nos dois lados, porque a tabela exige 5 documentos e guarda 8 vizinhos. O lado minoritário de um par partido é raro por definição, que é o próprio problema, então ele nunca entra na tabela.
+- Por cosseno entre os vetores somados dos artigos de cada lado, em resolução cheia: `féria`/`férias` e `palmeira`/`palmeiras` dão 0.000, empatados com `deu`/`deus`, que é o par que jamais pode ser juntado. E metade dos pares nem é mensurável.
+
+A conclusão vale mais que as duas medições: **contexto não é medível com n=1**. Qualquer estatística sobre o lado minoritário é estimada com um a três documentos, e nenhuma escolha de representação ou de limiar conserta falta de amostra.
+
+**Nem a ingestão consegue se consertar sozinha, artigo a artigo.** Os dois erros são opostos e pedem correções opostas. Prefixar a manchete para a primeira palavra deixar de ser primeira recupera `petrobras` e não mexe em `equipes`; minusculizar a primeira palavra recupera `equipe`, mata o reconhecimento de entidade de `Petrobras` e quebra `Rio Grande do Sul`. A maiúscula sozinha é genuinamente ambígua, e o que desempata é o resto do corpus.
+
+**O que resolve é voto por palavra escrita.** Cada texto escrito elege um termo, por maioria das leituras tomadas onde a maiúscula era informativa, ou seja fora da cabeça de frase. O mapa é chaveado pela **palavra escrita** e não pelo lema, e é aí que mora a segurança:
+
+- **Duas palavras escritas diferentes nunca se juntam.** `santos` eleger `santos` não diz nada sobre a palavra `santo`, que é outra sequência na página e tem voto próprio. Chaveado por lema isso falha, e falhou quando medido: a superfície `santos` leu `santo` uma vez em sete e propôs reescrever todo santo do acervo no clube de futebol. A mesma proteção cobre `deu` contra `deus` e `mina` contra `minas` sem nomear nenhum deles.
+- **Nada no meio da frase é reescrito.** O mapa só se aplica onde o erro mora, então uma entrada errada alcança as aberturas de uma palavra escrita e não toda ocorrência de um termo.
+- **Não há limiar de semelhança para calibrar.** Existe só um piso de evidência, `MIN_SETTLED = 3`, porque uma leitura sozinha elege sem oposição e o corpus tem leituras simplesmente erradas: `chance` voltou como `chancer` na sua única ocorrência assentada.
+
+O que isso torna verdadeiro é **consistência, não correção linguística**. Uma palavra escrita que sempre reduz ao mesmo termo é um termo que casa entre artigos, e casar é o que o cosseno mede. Escolher a mais bonita de duas leituras não é o trabalho.
+
+Medido pelo caminho de código real sobre os 1423 títulos do retrato:
+
+| | antes | depois |
+|---|---|---|
+| vocabulário | 4245 | 4223 |
+| pares X/Xs | 44 | 32 |
+| documentos que não casavam | 61 | 35 |
+
+`santo`, `santos`, `deu`, `deus`, `mina` e `minas` saem intocados. A medição é sobre título, que é uma frase por artigo e portanto uma abertura só; contra o acervo, com `título. resumo`, tanto a evidência quanto o número de aberturas são bem maiores.
+
+**O voto mora no reprocessamento e a ingestão lê o resultado.** Contar as leituras é uma passada sobre o acervo inteiro, que é o que o `reprocess` já faz e o job horário nunca faz. Ele grava `term_canonical`, e a ingestão lê a tabela uma vez por passada e a aplica. Sem isso o corpus voltaria a partir a alguns milhares de artigos por semana entre um reprocessamento e outro, que é exatamente o estado de duas réguas que o `reprocess` existe para evitar.
 
 **Clusterização resolve o problema que `url UNIQUE` não resolve.** A restrição de unicidade só evita reler a mesma URL. O problema de verdade é que G1, BBC e CNN publicam a mesma matéria com URLs diferentes:
 
@@ -630,7 +684,7 @@ Quatro workflows, e nenhum passo que dependa de alguém ter o `wrangler` instala
 | `ingest` | duas vezes por hora, aos :17 e :47 | lê os feeds, clusteriza, materializa `feed_candidates` e o onboarding |
 | `cooccurrence` | domingo às 4:40 | recalcula `term_cooccur` sobre o acervo, e só então poda `article_terms` |
 | `deploy` | a cada push na main | testa, linta, **aplica migrations** e sobe o Worker |
-| `reprocess` | só à mão | re-lematiza o acervo sob as regras de hoje |
+| `reprocess` | só à mão | re-lematiza o acervo sob as regras de hoje e vota `term_canonical` |
 
 Os três que escrevem no corpus dividem o mesmo grupo de concorrência. Duas passadas simultâneas deixariam `terms.doc_count` contando um corpus que nenhuma das duas viu.
 
@@ -652,5 +706,7 @@ A mitigação é pedir duas vezes por hora, aos :17 e :47. Não deixa de ser mel
 **A consequência para o leitor fica registrada:** a matéria mais nova do feed costuma ter entre uma e duas horas, podendo chegar a quatro. Num agregador isso é aceitável e é o preço declarado de não manter worker ligado. O que não seria aceitável é o documento prometer uma hora e a operação entregar quatro sem ninguém ter medido.
 
 **O reprocessamento não tem agenda de propósito.** Ele conserta a discordância entre o que `article_terms` guardou e as regras que o código usa hoje, e essa discordância só aparece quando alguém edita uma lista de descarte. Uma agenda faria minutos de trabalho toda semana para um evento que acontece três vezes por ano.
+
+Ele ganhou uma segunda função que só ele pode ter: contar o voto de `term_canonical`. A tabela é uma apuração sobre o acervo inteiro, e o job horário enxerga um lote. São duas passadas sobre os artigos e uma só sobre o spaCy, com as leituras guardadas em memória entre elas, porque a apuração precisa estar completa antes de qualquer artigo ser canonizado e reler o corpus dobraria a metade cara do trabalho.
 
 Não consultado ainda: SANTINI, Rose Marie. *O algoritmo do gosto*, vol. 2: tecnologias de controle, contágio e curadoria de si. Appris. Pelo título, deve tratar de contágio e curadoria de si, que tocam diretamente o vetor de sessão e o laço de reforço.

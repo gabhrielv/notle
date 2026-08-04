@@ -17,9 +17,9 @@ import httpx
 from ingest import candidates, onboarding
 from ingest.clustering import assign_cluster
 from ingest.feeds import ArticleDraft, dedupe_by_url, parse_feed
-from ingest.normalize import lemmatize, term_frequencies
+from ingest.normalize import canonize, occurrences, term_frequencies
 from ingest.sources import SOURCES, portal_names
-from ingest.store import MAX_BOUND_PARAMS, D1Client, chunked
+from ingest.store import MAX_BOUND_PARAMS, D1Client, D1Error, chunked
 from ranking.vectors import weigh
 
 USER_AGENT = "notle/0.1 (+https://github.com/gabhrielv/notle)"
@@ -58,21 +58,34 @@ class IngestionPlan:
         return len(self.articles)
 
 
-def prepare(drafts: list[ArticleDraft], known_urls: set[str]) -> IngestionPlan:
+def prepare(
+    drafts: list[ArticleDraft],
+    known_urls: set[str],
+    canonical: dict[str, str] | None = None,
+) -> IngestionPlan:
     """Works out what this run should store.
 
     Drops what the corpus already has, normalizes the rest, and counts how many
     documents each term appears in.
+
+    `canonical` is the corpus-wide vote on what each written word reduces to,
+    counted by `reprocess_terms` and read from `term_canonical`. Without it this
+    run would write the same split terms the reprocessing just merged, and the
+    archive would drift apart again at a few thousand articles a week. It
+    defaults to empty because the pure function has to stay callable without a
+    database, which is what makes this half testable.
     """
     articles: list[PreparedArticle] = []
     document_counts: Counter = Counter()
     banned = portal_names()
+    canonical = canonical or {}
 
     for draft in drafts:
         if draft.url in known_urls:
             continue
 
-        lemmas = lemmatize(f"{draft.title}. {draft.summary}", draft.language)
+        found = occurrences(f"{draft.title}. {draft.summary}", draft.language)
+        lemmas = canonize(found, canonical)
 
         # A portal names itself in its own summaries, so its name becomes a term
         # and enters the feature space. Dropped here rather than in `normalize`
@@ -469,6 +482,28 @@ def refresh_onboarding(client: D1Client, now: datetime) -> int:
     return len(chosen)
 
 
+def canonical_forms(client: D1Client) -> dict[str, str]:
+    """The vote `reprocess_terms` left behind, read once for the whole pass.
+
+    Read whole rather than looked up per word. It is a few hundred rows against
+    a few thousand words a pass would ask about, so one request and a dictionary
+    beats any query that tries to be selective.
+
+    A missing table is tolerated, and that is about the schedule rather than
+    tidiness. Migrations are applied by the deploy workflow and this job runs
+    twice an hour on its own, so there is a window where the code knows about a
+    table the database has not been given yet, and a deploy that failed leaves
+    that window open. Ingestion stopping for it would trade a corpus that splits
+    terms for no corpus at all. Empty means the same thing and takes the same
+    path: behave the way this did before the vote existed.
+    """
+    try:
+        rows = client.query("SELECT surface, canonical FROM term_canonical")
+    except D1Error:
+        return {}
+    return {row["surface"]: row["canonical"] for row in rows}
+
+
 def run(
     client: D1Client | None = None, now: datetime | None = None
 ) -> tuple[IngestionPlan, int, int]:
@@ -478,7 +513,11 @@ def run(
 
     source_ids = ensure_sources(client)
     drafts = fetch_drafts(SOURCES, source_ids, now=now)
-    plan = prepare(drafts, known_urls(client, [d.url for d in drafts]))
+    plan = prepare(
+        drafts,
+        known_urls(client, [d.url for d in drafts]),
+        canonical_forms(client),
+    )
     store(client, plan, now)
     published = refresh_candidates(client, now)
     offered = refresh_onboarding(client, now)

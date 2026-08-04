@@ -118,7 +118,22 @@ class TestInterleave:
         reserved = [card for card in page if card["discovery"]]
 
         assert len(reserved) == feed.PAGE // 4
-        assert all(card["similarity"] < feed.DISCOVERY_CEILING for card in reserved)
+        assert all(card["similarity"] == 0.0 for card in reserved)
+
+    def test_a_story_the_profile_has_any_opinion_about_is_not_a_discovery(self):
+        """The badge tells the reader the profile's strongest terms say nothing
+        about this story, so any contribution at all disqualifies it.
+
+        A ceiling here instead of zero was comparing two rulers. `similarity` is
+        completed from a dot product over the twenty terms the query binds, not
+        against the whole profile, while the ceiling of 0.011 had been read off
+        the true cosine. Measured over twenty profiles on the live window, 26% of
+        the cards that took a reserved slot had a true cosine above that ceiling.
+        """
+        faint = [self.card(200 + i, 0.0001) for i in range(10)]
+        page = feed.interleave([self.card(i, 0.2) for i in range(40)] + faint, 0.25, 0)
+
+        assert not any(card["discovery"] for card in page)
 
     def test_reserved_slots_are_spread_through_the_page(self):
         """Collected at the end they would be a section the reader learns to

@@ -172,7 +172,20 @@ export function Card({
           group instead of miscalling it. */}
       {(card.about.length > 0 || card.discovery) && (
         <p className="kicker">
-          {card.discovery && <span className="badge">descoberta</span>}
+          {/* The badge promises exactly what the ranking measured and nothing
+              more. It is shown when the strongest terms of the profile
+              contribute nothing at all to this story, so that is what it says
+              on hover. It used to read "você nunca leu sobre isso", which is a
+              claim about the reader that the number underneath never
+              supported. */}
+          {card.discovery && (
+            <span
+              className="badge"
+              title="Os termos mais fortes do seu perfil não dizem nada sobre esta matéria"
+            >
+              descoberta
+            </span>
+          )}
           {card.about.slice(0, 3).join(' · ')}
         </p>
       )}

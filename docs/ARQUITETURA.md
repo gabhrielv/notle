@@ -466,11 +466,29 @@ Isso não é defeito de implementação, é o comportamento correto de um recome
 
 Por isso o estado absorvente é tratado explicitamente:
 
-- **Slots de descoberta.** Uma fração dos slots é reservada a itens de alta qualidade e baixa afinidade, marcados com selo próprio no card. **Qualidade é cobertura entre portais**, o mesmo sinal do onboarding: não depende de popularidade de leitor, o que importa porque o Notle implementa só o modelo de gosto e a ausência de sinal de popularidade é posição de projeto. **Baixa afinidade é cosseno abaixo de 0.011**, que foi a mediana medida entre perfil e candidato, ou seja um candidato sobre o qual o ranking não tem opinião.
+- **Slots de descoberta.** Uma fração dos slots é reservada a itens de alta qualidade e baixa afinidade, marcados com selo próprio no card. **Qualidade é cobertura entre portais**, o mesmo sinal do onboarding: não depende de popularidade de leitor, o que importa porque o Notle implementa só o modelo de gosto e a ausência de sinal de popularidade é posição de projeto. **Baixa afinidade é afinidade exatamente zero**, e o parágrafo abaixo é por que não é um teto.
 
   Os slots são **intercalados a passo fixo**, não empilhados no fim. Juntos no rodapé viram seção que o leitor aprende a pular, o que falha do mesmo jeito que não reservar. Quando não há candidato elegível o slot volta para o ranking: promessa de descoberta não é motivo para mostrar notícia pior. Contra o feed ao vivo, slider em 0.25 devolve 6 de 24 cards nas posições 4, 8, 12, 16, 20 e 24.
 - **Controle do usuário.** A fração é um slider, de bolha até descoberta, guardado em `users.discovery_ratio`, com teto de 0.5. Acima disso o feed deixa de ser ordenado por gosto, o que é outro produto e não um ajuste mais forte deste.
 - **Entropia visível.** A entropia do `term_vector` é uma medida direta de concentração de gosto, e é exibida como diagnóstico: "seu feed está concentrado em 3 temas".
+
+### O selo de descoberta media com uma régua e prometia com outra
+
+O valor de afinidade que o card carrega é completado a partir de um produto escalar sobre os **20 termos mais fortes do perfil**, porque são esses que a consulta amarra. Ele não é o cosseno contra o perfil inteiro, e a diferença não é pequena. Medido sobre 20 perfis contra os candidatos da janela, 18706 pares com sobreposição:
+
+| razão entre o valor reportado e o cosseno verdadeiro | |
+|---|---|
+| mediana | 0.000 |
+| média | 0.108 |
+| p90 | 0.632 |
+
+A mediana é zero porque em 86% dos pares nenhum dos 20 termos casa. Contra isso, `DISCOVERY_CEILING = 0.011` tinha sido lido da mediana do cosseno **verdadeiro**, então a comparação era entre duas réguas.
+
+O custo medido não estava na ordenação, que usa esse número em toda parte e é consistente consigo mesma. Estava no selo: **26% dos cards que pegavam slot reservado tinham cosseno verdadeiro acima do teto**, ou seja a tela dizia ao leitor que ele nunca tinha lido sobre aquilo a respeito de matéria sobre a qual o perfil tinha opinião. Num projeto cuja regra declarada é que toda posição seja explicável, um selo que mente é a falha mais séria das duas.
+
+Recalibrar não estava disponível: a mediana nessa régua é zero e não existe nada abaixo dela.
+
+A saída foi **igualar a promessa à aritmética**. Elegível passou a ser afinidade exatamente zero, e o selo passou a dizer o que isso significa, que os termos mais fortes do perfil não contribuem nada para aquela matéria. Se algum vigésimo primeiro termo teria contribuído é pergunta que o card deixou de responder, em vez de responder errado. Custa nada: 101 candidatos elegíveis por perfil contra 103 antes, para 6 slots. O que estava limitando nunca foi o teto e sim a cobertura, já que só 112 dos 1423 clusters da janela têm dois portais.
 
 ## Desempenho, cache e percepção de carregamento
 

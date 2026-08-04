@@ -68,15 +68,6 @@ def shorten(text: str, limit: int = SUMMARY_CHARS) -> str:
     boundary = cut.rfind(" ")
     return (cut[:boundary] if boundary > 0 else cut).rstrip(" ,;:") + "…"
 
-# Below this affinity a story is not something the reader's profile asked for,
-# which is what makes it eligible for a discovery slot.
-#
-# Read off the measured distribution: the median profile to candidate cosine on
-# the live window was 0.011 and the ninetieth percentile 0.044. A candidate under
-# the median is one the ranking has no opinion about, and those are exactly the
-# ones the absorbing state would otherwise never surface.
-DISCOVERY_CEILING = 0.011
-
 # How many portals have to have run a story before it can take a reserved slot.
 #
 # The same signal the onboarding uses, and for the same reason. A slot spent on
@@ -171,9 +162,31 @@ def interleave(everything, ratio: float, offset: int, size: int = PAGE):
     it as the opposite of serendipity.
 
     A slot is filled by the best candidate the profile has no opinion about,
-    which means low affinity and enough coverage to be worth the slot. When there
-    is nothing eligible the slot goes back to the ranking rather than staying
-    empty: a promise of discovery is not a reason to show worse news.
+    which means no affinity at all and enough coverage to be worth the slot. When
+    there is nothing eligible the slot goes back to the ranking rather than
+    staying empty: a promise of discovery is not a reason to show worse news.
+
+    "No opinion" is zero and not a small number, and that is the whole of what
+    the badge is allowed to claim. `similarity` is completed from a dot product
+    over the twenty strongest profile terms, because those are what the query
+    binds, so it is not the cosine against the whole profile and reads far lower:
+    measured over twenty profiles against the live window, it averages a tenth of
+    the true cosine and is exactly zero in 86% of pairs.
+
+    Against that, a ceiling read off the true cosine was comparing two different
+    rulers. The measured cost was not in the ordering, which uses this number
+    throughout and is consistent with itself, but in the badge: 26% of the cards
+    that took a reserved slot had a true cosine above the ceiling, so the screen
+    told the reader it had never seen this subject about a story the profile did
+    have an opinion on. Recalibrating was not available either, since the median
+    on this ruler is zero and there is nothing below it.
+
+    At zero the claim and the arithmetic are the same statement, which is the
+    standard the rest of the ranking is held to: the strongest terms of this
+    reader's profile contribute nothing to this story. Whether some twenty-first
+    term would have is a question the card no longer answers, rather than one it
+    answers wrongly. It costs nothing to be honest here: 101 candidates a profile
+    qualify against 103 before, for six slots.
 
     Interleaved at a fixed stride rather than appended, so the reserved slots are
     spread through the page. Collected at the end they would be a section the
@@ -186,8 +199,7 @@ def interleave(everything, ratio: float, offset: int, size: int = PAGE):
     eligible = [
         card
         for card in everything
-        if card["similarity"] < DISCOVERY_CEILING
-        and card["sources"] >= DISCOVERY_SOURCES
+        if card["similarity"] == 0.0 and card["sources"] >= DISCOVERY_SOURCES
     ]
 
     ordinary = [card for card in everything if card not in eligible]

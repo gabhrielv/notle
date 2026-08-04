@@ -43,6 +43,12 @@ dumps/
 scratch/
 notas/
 
+# Rascunho de sessao. O que ele tinha de duradouro esta em docs/ARQUITETURA.md,
+# e o resto e anotacao de trabalho. Estava fora do git e fora daqui ao mesmo
+# tempo, que e o unico estado em que um `git add -A` o levaria junto sem
+# ninguem ter decidido isso.
+teste.md
+
 # Retrato do corpus para o simulador. Derivado do D1, grande, e diferente a
 # cada hora. Reconstruido com scripts/pull_corpus.py.
 .sim-corpus.json

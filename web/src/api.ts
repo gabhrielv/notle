@@ -103,7 +103,7 @@ export function sendSignals(
   sessionId: string,
   events: SignalEvent[],
   beacon = false,
-): void {
+): Promise<void> | void {
   const body = JSON.stringify({ session_id: sessionId, events })
 
   // sendBeacon survives the page going away, which fetch does not reliably do.
@@ -114,15 +114,24 @@ export function sendSignals(
     return
   }
 
-  void fetch('/api/signals', {
+  // Handed back rather than fired and forgotten, because the pull gesture has to
+  // know the queue landed before it asks for a fresh page. Between two
+  // ingestions the ranking does not move, so what makes the stories change is
+  // the repetition penalty, and that only counts impressions the server has
+  // actually received.
+  return fetch('/api/signals', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body,
     keepalive: true,
-  }).catch(() => {
-    // Losing a batch of implicit signal is not worth telling the reader about.
-    // It adjusts; it does not decide.
-  })
+  }).then(
+    () => undefined,
+    () => {
+      // Losing a batch of implicit signal is not worth telling the reader about.
+      // It adjusts; it does not decide. Swallowed rather than rethrown, so a
+      // refresh still happens when the network dropped the batch.
+    },
+  )
 }
 
 async function read<T>(path: string, signal?: AbortSignal): Promise<T> {

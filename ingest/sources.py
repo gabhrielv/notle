@@ -34,9 +34,27 @@ newsrooms rather than trade press, which is a different editorial line from ever
 other English feed here. Ars Technica and Tom's Hardware go deeper than the rest
 on the technical side, and ZDNET covers the enterprise nobody else does.
 
-Names that already have a voice here were left out on purpose. Gizmodo,
-TechRadar, Digital Trends and Wired UK all answered and all were fresh, and all
-four repeat what Engadget, the Verge and Wired already say.
+That judgement was made when the list was small, and it was revisited when the
+list widened: TechRadar and Digital Trends are here now, because at this size the
+overlap with Engadget and the Verge costs less than the coverage gap did. Wired
+UK is still out, since Wired itself is here. Gizmodo has its own note below.
+
+Gizmodo was added and then removed, and it is the one case a local check could
+not have caught. It answered here every time it was tried, so it passed the same
+gate everything else did, and then produced nothing at all from the runner. What
+the ingestion logged once it started naming the feed that failed was a 403 on
+`https://gizmodo.com/rss`.
+
+The variable was isolated by holding the User-Agent fixed: from a workstation
+that URL answers 301 and redirects to `https://gizmodo.com/feed`, which serves 20
+items; from the Actions runner the same request with the same header is refused
+outright, before the redirect. Same client, same header, different address, so
+what is being refused is where the request comes from. A feed that only answers
+from somewhere the job never runs is not a source.
+
+Recorded for whoever tries again: `/rss` is also the stale path. The live one is
+`/feed`, and fixing the URL would not have helped, because the 403 arrives ahead
+of the redirect.
 
 Every feed here was checked before being added, for three things at once: that
 it answers, how many items it carries, and how old its newest story is. Several
@@ -257,7 +275,6 @@ SOURCES = (
         "https://www.xda-developers.com",
         language="en",
     ),
-    Source("Gizmodo", "https://gizmodo.com/rss", "https://gizmodo.com", language="en"),
     Source("404 Media", "https://www.404media.co/rss/", "https://www.404media.co", language="en"),
     Source(
         "NPR Technology",

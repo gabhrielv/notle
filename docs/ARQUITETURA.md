@@ -740,6 +740,17 @@ Quatro workflows, e nenhum passo que dependa de alguém ter o `wrangler` instala
 
 Os três que escrevem no corpus dividem o mesmo grupo de concorrência. Duas passadas simultâneas deixariam `terms.doc_count` contando um corpus que nenhuma das duas viu.
 
+**`FETCH_WORKERS` é o que sustenta o número de fontes caber no teto de 15 minutos do job.** Ler um feed é esperar num socket, não trabalho, e o laço serial gastava o orçamento inteiro da passada ociosa. Serial, o pior caso é o número de feeds vezes o timeout de 25s, o que em 44 portais dá 18,3 minutos contra um teto de 15: uma tarde ruim num punhado de hosts estoura a passada e ela não grava nada.
+
+| pool | pior caso com 44 fontes |
+|---|---|
+| serial | 18,3 min |
+| **10 por vez** | **1,8 min** |
+
+Isso é o que torna a lista de fontes uma variável e não uma constante: a contagem de portais deixou de ser limitada pelo relógio do job. A lematização continua serial, que é onde a CPU de verdade está.
+
+Os resultados são coletados **na ordem dos feeds e não na ordem em que a rede responde**. `dedupe_by_url` guarda a primeira aparição de uma URL, então uma ordem dependente da rede faria o portal vencedor de uma matéria republicada variar entre execuções, e com ele o card que o leitor vê.
+
 **As migrations são aplicadas antes do deploy, nunca depois.** A ordem inversa é a que põe um Worker novo na frente de um schema velho e produz erro de coluna inexistente em produção. As cinco primeiras foram aplicadas à mão antes deste workflow existir e estão registradas em `d1_migrations`, então a sexta sobe por comando.
 
 **"De hora em hora" é o que se pede, não o que chega.** Medido sobre 31 execuções agendadas, todas bem-sucedidas:
@@ -756,6 +767,21 @@ Agendamento no GitHub Actions é melhor esforço e a fila é descartada sob carg
 A mitigação é pedir duas vezes por hora, aos :17 e :47. Não deixa de ser melhor esforço, mas dobra as chances de uma cair. Custa nada: a passada é idempotente pelo `url UNIQUE`, uma que não acha novidade não escreve e sai em trinta segundos, e o repositório é público, então minuto de Actions é de graça.
 
 **A consequência para o leitor fica registrada:** a matéria mais nova do feed costuma ter entre uma e duas horas, podendo chegar a quatro. Num agregador isso é aceitável e é o preço declarado de não manter worker ligado. O que não seria aceitável é o documento prometer uma hora e a operação entregar quatro sem ninguém ter medido.
+
+### O que nomear o feed que falhou entregou
+
+A ingestão engolia a exceção de um feed em silêncio, o que é a postura certa (um portal fora do ar não pode derrubar a passada) tomada de um jeito errado: uma fonte que nunca entregou nada ficava indistinguível de uma que não teve novidade. Nomear o feed no log custou uma linha e resolveu um caso aberto na primeira passada seguinte:
+
+```
+feed falhou: Gizmodo: HTTPStatusError: Client error '403 Forbidden'
+             for url 'https://gizmodo.com/rss'
+```
+
+A hipótese era bloqueio por endereço, e ela foi isolada segurando o User-Agent fixo: da estação de trabalho a mesma URL responde 301 e redireciona para `https://gizmodo.com/feed`, que serve 20 itens; do runner do Actions a mesma requisição com o mesmo cabeçalho é recusada antes do redirecionamento. Mesmo cliente, mesmo cabeçalho, endereço diferente, então o que está sendo recusado é a origem.
+
+**A fonte saiu**, pela regra registrada antes de a medição existir. A lista foi de 45 para 44 portais. Fica anotado que `/rss` também é o caminho velho e que o vivo é `/feed`, mas corrigir a URL não teria ajudado, porque o 403 chega antes do redirecionamento.
+
+Isso é também o argumento geral para o log nomear a fonte: o cliente passa no teste local justamente porque quem testa não está no lugar de onde o job roda.
 
 ### Quem pede a execução mudou de lugar
 

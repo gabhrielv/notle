@@ -27,7 +27,7 @@ FETCH_TIMEOUT = 25.0
 
 # Reading a feed is waiting on a socket, not work, so the loop that did it one
 # portal at a time spent the job's whole budget on idling. Serial, the worst case
-# is the number of feeds times the timeout above, which at 45 portals is 18.7
+# is the number of feeds times the timeout above, which at 44 portals is 18.3
 # minutes against a 15 minute ceiling: a bad afternoon on a handful of hosts
 # would time the run out and write nothing at all.
 #

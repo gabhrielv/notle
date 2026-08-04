@@ -374,6 +374,85 @@ async def record(request, env):
     )
 
 
+# Which workflow the schedule asks GitHub to run, and on which branch.
+#
+# The job stays in Actions and only the clock moves here. The normalizer depends
+# on spaCy and a Python Worker cannot load it, so a Worker that tried to do the
+# ingestion itself would be a rewrite of the part of the system that is hardest
+# to get right, in the runtime least able to run it.
+INGEST_WORKFLOW = "ingest.yml"
+INGEST_REF = "main"
+
+# GitHub refuses a request without one, and a generic agent is how a token gets
+# rate limited alongside everybody else's script.
+GITHUB_UA = "notle-scheduler"
+
+
+async def on_scheduled(event, env, ctx):
+    """Asks GitHub to run the ingestion, because its own scheduler will not.
+
+    A `cron` in Actions is best effort and its queue is dropped under load.
+    Measured over 31 scheduled runs, all of them successful: median gap of 96
+    minutes against an hourly request, worst of 221, and only 9 of 30 gaps
+    inside 70 minutes. Nothing fails; the run simply does not happen.
+
+    `workflow_dispatch` is a different path. It is a request rather than a
+    queued event, so it does not sit behind the same backlog, and a Cron Trigger
+    here is the piece that can be relied on to make it. The scheduled workflow is
+    left in place as a fallback: this depends on a token that can expire and on
+    a Worker that can fail to deploy, and the failure would otherwise be silent
+    for as long as nobody looked at the feed's freshness.
+
+    The imports are inside the function on purpose. A Python Worker gets 1000ms
+    of startup CPU and pays for every module the file imports on every request,
+    including the thousands that only ever fetch a feed. This path runs twice an
+    hour and has no such pressure.
+    """
+    import json as _json
+
+    from js import Object
+    from js import fetch as js_fetch
+    from pyodide.ffi import to_js
+
+    token = getattr(env, "GITHUB_TOKEN", None)
+    repository = getattr(env, "GITHUB_REPOSITORY", None)
+    if not token or not repository:
+        # Nothing to do rather than an exception. A missing secret means the
+        # trigger was deployed before it was configured, and the scheduled
+        # workflow is still covering the corpus in the meantime.
+        print("notle: GITHUB_TOKEN ou GITHUB_REPOSITORY ausente, disparo ignorado")
+        return
+
+    url = (
+        f"https://api.github.com/repos/{repository}"
+        f"/actions/workflows/{INGEST_WORKFLOW}/dispatches"
+    )
+    options = to_js(
+        {
+            "method": "POST",
+            "headers": {
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+                "User-Agent": GITHUB_UA,
+                "Content-Type": "application/json",
+            },
+            "body": _json.dumps({"ref": INGEST_REF}),
+        },
+        dict_converter=Object.fromEntries,
+    )
+
+    response = await js_fetch(url, options)
+
+    # 204 is what a dispatch returns. Logged either way, because a trigger that
+    # silently stops working looks exactly like a corpus nobody is updating, and
+    # the whole point of this is that the previous failure was invisible.
+    if response.status == 204:
+        print(f"notle: ingestao disparada em {repository}")
+    else:
+        print(f"notle: disparo recusado, HTTP {response.status}")
+
+
 ROUTES = {
     ("GET", "/api/health"): health,
     ("GET", "/api/feed"): read_feed,

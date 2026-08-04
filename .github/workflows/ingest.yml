@@ -4,20 +4,29 @@ name: ingest
 # justify an always-on worker, and an always-on worker is exactly what nobody
 # gives away for free.
 on:
+  # This is now the fallback, not the clock. A Cron Trigger on the Worker calls
+  # `workflow_dispatch` below, because a dispatch is a request rather than a
+  # queued event and does not sit behind the backlog this schedule does.
+  #
+  # Kept anyway, and deliberately. The trigger depends on a token that expires
+  # and on a Worker that can fail to deploy, and either failure is silent: it
+  # looks exactly like a corpus nobody is updating. With this still here the
+  # worst case is the old median of 96 minutes rather than a feed that quietly
+  # stops.
+  #
+  # Measured over 31 runs of a single hourly cron: median gap of 96 minutes,
+  # worst of 221, and only 9 of 30 gaps inside 70 minutes. A schedule here is
+  # best effort and the queue is dropped under load, so more scheduled events
+  # mean more chances one of them fires.
+  #
+  # Overlapping with the dispatched run costs nothing. The pass is idempotent,
+  # dedup happens on `url UNIQUE`, the concurrency group below serializes them,
+  # and a pass that finds nothing new writes nothing and exits in about thirty
+  # seconds. The repository is public, so Actions minutes are free.
+  #
+  # Off the round minutes on purpose: every scheduled job in the world fires
+  # at :00, and that is exactly when the queue is worst.
   schedule:
-    # Two slots an hour, not because the corpus needs it but because GitHub does
-    # not deliver one. Measured over 31 runs of a single hourly cron: median gap
-    # of 96 minutes, worst of 221, and only 9 of 30 gaps inside 70 minutes. A
-    # schedule here is best effort and the queue is dropped under load, so more
-    # scheduled events mean more chances one of them fires.
-    #
-    # It costs nothing to try twice. The run is idempotent, dedup happens on
-    # `url UNIQUE`, and a pass that finds nothing new writes nothing and exits
-    # in about thirty seconds. The repository is public, so Actions minutes are
-    # free.
-    #
-    # Off the round minutes on purpose: every scheduled job in the world fires
-    # at :00, and that is exactly when the queue is worst.
     - cron: "17,47 * * * *"
   workflow_dispatch:
 

@@ -757,6 +757,18 @@ A mitigação é pedir duas vezes por hora, aos :17 e :47. Não deixa de ser mel
 
 **A consequência para o leitor fica registrada:** a matéria mais nova do feed costuma ter entre uma e duas horas, podendo chegar a quatro. Num agregador isso é aceitável e é o preço declarado de não manter worker ligado. O que não seria aceitável é o documento prometer uma hora e a operação entregar quatro sem ninguém ter medido.
 
+### Quem pede a execução mudou de lugar
+
+Pedir duas vezes por hora dobra a chance e não conserta a causa: o agendamento do Actions é melhor esforço e a fila é descartada sob carga. O que não sofre isso é `workflow_dispatch`, que é uma requisição e não um evento enfileirado.
+
+Então **um Cron Trigger no próprio Worker dispara o workflow**, aos :17 e :47. O job continua inteiro no Actions, e isso não é conveniência: o normalizador depende de spaCy, que não carrega no runtime do Worker. Um Worker que tentasse fazer a ingestão seria uma reescrita da parte mais difícil do sistema no ambiente menos capaz de rodá-la. O que muda de lugar é só o relógio.
+
+O `schedule` do Actions **fica onde está, como reserva**. O disparo depende de um token que expira e de um Worker que pode falhar no deploy, e as duas falhas são silenciosas: parecem exatamente um corpus que ninguém está atualizando. Com o agendamento ainda ali, o pior caso volta a ser a mediana de 96 minutos em vez de um feed que parou sem avisar. Sobrepor não custa nada, porque a passada é idempotente pelo `url UNIQUE`, o grupo de concorrência serializa as duas, e a que não acha novidade sai em trinta segundos.
+
+O que exige configuração fora do repositório: `GITHUB_TOKEN` como segredo do Worker, com permissão de escrita em Actions, e `GITHUB_REPOSITORY` como variável. Sem os dois o handler registra a ausência no log e sai, em vez de levantar exceção, porque a reserva já está cobrindo o corpus enquanto isso.
+
+Verificado localmente contra o runtime de verdade: o handler é invocado, a leitura das variáveis funciona e a montagem das opções de requisição também. **A chamada ao GitHub em si não foi exercitada**, porque exigiria um token real e dispararia uma execução de verdade.
+
 **O reprocessamento não tem agenda de propósito.** Ele conserta a discordância entre o que `article_terms` guardou e as regras que o código usa hoje, e essa discordância só aparece quando alguém edita uma lista de descarte. Uma agenda faria minutos de trabalho toda semana para um evento que acontece três vezes por ano.
 
 Ele ganhou uma segunda função que só ele pode ter: contar o voto de `term_canonical`. A tabela é uma apuração sobre o acervo inteiro, e o job horário enxerga um lote. São duas passadas sobre os artigos e uma só sobre o spaCy, com as leituras guardadas em memória entre elas, porque a apuração precisa estar completa antes de qualquer artigo ser canonizado e reler o corpus dobraria a metade cara do trabalho.

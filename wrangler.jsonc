@@ -26,6 +26,28 @@
     }
   ],
 
+  // O relógio da ingestão. O job continua no Actions, porque o normalizador
+  // depende de spaCy e isso não roda no runtime do Worker; o que muda de lugar
+  // é só quem pede a execução.
+  //
+  // `cron` no Actions é melhor esforço e a fila é descartada sob carga: medido
+  // em 31 execuções, mediana de 96 min contra uma hora pedida, pior caso de 221.
+  // Um Cron Trigger daqui dispara `workflow_dispatch`, que não é evento
+  // enfileirado e não sofre o mesmo represamento.
+  //
+  // Mesmo horário de antes, aos :17 e :47, fora dos minutos redondos onde toda
+  // fila do mundo dispara. A diferença é que agora eles acontecem.
+  "triggers": {
+    "crons": ["17,47 * * * *"]
+  },
+
+  "vars": {
+    // Qual repositório receber o disparo. Aqui e não no código porque é
+    // configuração de implantação, e o token que a acompanha é segredo
+    // (`wrangler secret put GITHUB_TOKEN`).
+    "GITHUB_REPOSITORY": "gabhrielv/notle"
+  },
+
   "observability": {
     "enabled": true
   }

@@ -53,6 +53,7 @@ jobs:
         run: |
           uv run --group ingest --group dev ruff check src ingest scripts sim tests
           pnpm --dir web lint
+          pnpm --dir web test
 
       # Antes do deploy, para que o Worker novo nunca encontre um schema velho.
       # A ordem inversa é a que produz erro de coluna inexistente em produção.

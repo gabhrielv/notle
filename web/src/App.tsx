@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import type { TouchEvent } from 'react'
 import { Card } from './Card'
 import { Onboarding } from './Onboarding'
 import {
@@ -11,6 +12,7 @@ import {
 } from './api'
 import type { Feed, Signal } from './api'
 import { useTheme } from './theme'
+import { pullOffset, shouldRefresh } from './pull'
 import { useList, useSentinel } from './useList'
 import { useSignals } from './useSignals'
 import type { Loader } from './useList'
@@ -130,7 +132,7 @@ function Stream({ load, listKey, canAct, emptyTitle, emptyBody, children }: Stre
   // The same switch that hides the buttons stops the measuring. An anonymous
   // search promises nothing is recorded, and that promise is kept by there
   // being nothing to record rather than by a flag the server has to honour.
-  const { seen, clicked } = useSignals(canAct)
+  const { seen, clicked, flush } = useSignals(canAct)
   const [slow, setSlow] = useState(false)
 
   const firstLoad = list.busy && list.items.length === 0
@@ -146,8 +148,63 @@ function Stream({ load, listKey, canAct, emptyTitle, emptyBody, children }: Stre
 
   const sentinel = useSentinel(list.more, !list.exhausted && !list.failed)
 
+  // Where the finger went down, or nothing when the gesture is not armed. It
+  // only arms at the very top: anywhere else a downward finger is ordinary
+  // scrolling, and stealing that would break the page.
+  const from = useRef<number | null>(null)
+  const [pull, setPull] = useState(0)
+  const [refreshing, setRefreshing] = useState(false)
+
+  const onTouchStart = useCallback(
+    (event: TouchEvent) => {
+      if (refreshing || window.scrollY > 0) return
+      from.current = event.touches[0].clientY
+    },
+    [refreshing],
+  )
+
+  const onTouchMove = useCallback((event: TouchEvent) => {
+    if (from.current === null) return
+    setPull(pullOffset(event.touches[0].clientY - from.current))
+  }, [])
+
+  // Not an async handler. React types a touch handler as returning nothing, and
+  // an async one returns a promise nobody is holding, so the chain is written
+  // out instead.
+  const onTouchEnd = useCallback(() => {
+    if (from.current === null) return
+    from.current = null
+
+    const reached = shouldRefresh(pull)
+    setPull(0)
+    if (!reached) return
+
+    setRefreshing(true)
+    // The despatch comes first and is waited on. Between two ingestions the
+    // ranking does not move, so what makes the stories change is the repetition
+    // penalty, and that only counts impressions the server has already been
+    // told about. Reloading straight away would hand back the same list and
+    // make the gesture look broken exactly when it is used hardest.
+    void flush()
+      .then(() => list.refresh())
+      .finally(() => setRefreshing(false))
+  }, [pull, flush, list.refresh])
+
   return (
-    <>
+    <div
+      className="pullable"
+      onTouchStart={onTouchStart}
+      onTouchMove={onTouchMove}
+      onTouchEnd={onTouchEnd}
+      style={{ transform: `translateY(${pull}px)` }}
+    >
+      <p className="pull" aria-hidden={pull === 0 && !refreshing}>
+        {refreshing
+          ? 'atualizando'
+          : shouldRefresh(pull)
+            ? 'solte para atualizar'
+            : 'puxe para atualizar'}
+      </p>
       {children}
       {problem && <p className="hint">{problem}</p>}
 
@@ -210,7 +267,7 @@ function Stream({ load, listKey, canAct, emptyTitle, emptyBody, children }: Stre
           <p className="notice-body">{emptyBody}</p>
         </section>
       )}
-    </>
+    </div>
   )
 }
 

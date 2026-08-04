@@ -14,13 +14,18 @@
  * readable at a distance, which is exactly what cross-portal grouping has to be
  * to work as the differentiator.
  *
- * One accent, periwinkle, spent on what the system asserts: the term kicker, the
- * portal counter, the positive reason. Coral is its semantic pair and appears
- * only in the opposite direction, on the negative reason and on hiding.
+ * One accent, the crimson this project started with, spent on what the system
+ * asserts: the term kicker, the portal counter, the positive reason, and the
+ * full stop after the name. Coral is its semantic pair and appears only in the
+ * opposite direction, on the negative reason and on hiding.
+ *
+ * The accent was periwinkle for one slice and came back. It was the only cool
+ * thing on a sheet whose whole argument is warmth of judgement, and a mark that
+ * reads as a link is a mark that stops being read as a mark.
  *
  * Both themes were designed rather than derived from each other. Every colour
- * pair here was measured: the floor is 4.5:1 for text and the lowest value on
- * the sheet is 5.43:1.
+ * pair here was measured: the floor is 4.5:1 for text, and the accent sits at
+ * 5.46:1 on the page and 6.00:1 on a card.
  */
 
 :root {
@@ -1060,5 +1065,35 @@ body {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     transition-delay: 0ms !important;
+  }
+}
+
+/* The whole list slides down from here, so the label is parked just above the
+   top edge and is carried into view by the same movement. Positioned rather
+   than laid out, because a label that took up space would push the first card
+   down by its own height while nobody was pulling anything. */
+.pullable {
+  position: relative;
+  transition: transform 0.2s ease-out;
+}
+
+.pull {
+  position: absolute;
+  top: -1.75rem;
+  left: 0;
+  right: 0;
+  margin: 0;
+  color: var(--ink-2);
+  font-family: var(--mono);
+  font-size: 0.688rem;
+  letter-spacing: 0.09em;
+  text-align: center;
+}
+
+/* Snapping back is the part that reads as motion. Someone who asked for less of
+   it gets the position without the travel. */
+@media (prefers-reduced-motion: reduce) {
+  .pullable {
+    transition: none;
   }
 }

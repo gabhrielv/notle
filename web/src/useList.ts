@@ -65,11 +65,32 @@ export function useList(load: Loader, key: string) {
     fetchPage(items.length ? (next ?? 0) : 0, currentKey.current)
   }, [fetchPage, items.length, next])
 
+  /**
+   * Loads the first page again, replacing what is there.
+   *
+   * Separate from `retry`, which resumes from wherever a failure left off. This
+   * one always starts over, because the reader asked for a fresh list rather
+   * than for the last request to be attempted again.
+   */
+  const refresh = useCallback(() => {
+    fetchPage(0, currentKey.current)
+  }, [fetchPage])
+
   const drop = useCallback((cluster: number) => {
     setItems((previous) => previous.filter((card) => card.cluster_id !== cluster))
   }, [])
 
-  return { items, busy, failed, offline, exhausted: next === null, more, retry, drop }
+  return {
+    items,
+    busy,
+    failed,
+    offline,
+    exhausted: next === null,
+    more,
+    retry,
+    refresh,
+    drop,
+  }
 }
 
 /**

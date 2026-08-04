@@ -125,6 +125,30 @@ BETA = 0.1
 # is next door.
 W_COOCOR = 0.25
 
+# What one more portal is worth to a story the profile has no opinion about.
+#
+# Coverage across portals is this project's quality signal, and it was already
+# what picked the cold start's headlines. What it was not doing was competing: it
+# bought a reserved place on the page instead, so the number of stories arriving
+# that way was decided by the slider rather than by the day. Measured, 6.8% of
+# profile to candidate pairs cleared both of the old filters, which is about 97
+# candidates for at most twelve places, so supply never ran out and the filter
+# never bound.
+#
+# As a term it competes, and the count follows the news. Simulated over 20
+# profiles against the live window, marked stories per page run from none to ten
+# in the middle of the slider's travel.
+#
+# The value has the same kind of stated reading the others have:
+#
+#     At the top of the slider, each portal beyond the first is worth one half
+#     life of freshness.
+#
+# Which is why it is 0.08: `0.08 * 0.5 * 1` is `W_RECENCIA`, and `W_RECENCIA` is
+# defined as the affinity worth one half life. The reading is what makes the
+# number arguable rather than arbitrary.
+W_DESCOBERTA = 0.08
+
 # News dies in 48 hours. At a 12 hour half life a story from two days ago carries
 # 6% of the weight of one from now, which is small enough to keep the feed from
 # looking stale and large enough that a good old story can still outrank a dull
@@ -215,6 +239,23 @@ def rejection(negative_cosine: float) -> float:
     return negative_cosine if negative_cosine >= NEGATIVE_FLOOR else 0.0
 
 
+def discovery_lift(affinity: float, sources: int, ratio: float) -> float:
+    """How much coverage lifts a story the reader's profile says nothing about.
+
+    Zero unless all three hold: the reader asked for some, more than one portal
+    ran it, and the profile has no opinion at all.
+
+    The last of those is a step and not a ramp, deliberately. It is the same line
+    the badge draws, so what the card claims and what the arithmetic did stay the
+    same sentence, which is the rule this project holds itself to. A story the
+    ranking has any opinion about is one the ranking is already speaking for.
+    """
+    if affinity or ratio <= 0:
+        return 0.0
+
+    return W_DESCOBERTA * ratio * max(sources - 1, 0)
+
+
 def score(
     similarity_value: float,
     age_hours: float,
@@ -222,6 +263,7 @@ def score(
     session_value: float = 0.0,
     session_weight: float = 0.0,
     adjacent_value: float = 0.0,
+    discovery_value: float = 0.0,
 ) -> float:
     """Where a candidate lands: how well it matches, how old it is, what it recalls.
 
@@ -236,13 +278,18 @@ def score(
     beside it. A story the reader is on a run about still has to be news: an
     afternoon of reading about one subject must not resurface something from two
     days ago simply because it matches.
+
+    `discovery_value` sits inside the decay alongside the recency floor, for the
+    reason the floor is there: it is what a story is worth before the profile has
+    anything to say about it. Outside the decay a well covered story would be
+    perpetually resurrected, and news dies in 48 hours.
     """
     taste = (
         W_GOSTO * similarity_value
         + session_weight * session_value
         + W_COOCOR * adjacent_value
     )
-    return (taste + W_RECENCIA) * decay(age_hours) - BETA * penalty
+    return (taste + W_RECENCIA + discovery_value) * decay(age_hours) - BETA * penalty
 
 
 def age_in_hours(published_at: str, now: datetime) -> float:

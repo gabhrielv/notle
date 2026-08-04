@@ -8,15 +8,19 @@ dominates when, and what happens at the edges the demo will actually hit.
 import math
 from datetime import UTC, datetime
 
+import pytest
+
 from ranking.score import (
     BETA,
     HALF_LIFE_HOURS,
     IMPRESSION_LIMIT,
     NEGATIVE_FLOOR,
+    W_DESCOBERTA,
     W_GOSTO,
     W_RECENCIA,
     age_in_hours,
     decay,
+    discovery_lift,
     rejection,
     repetition,
     score,
@@ -294,3 +298,59 @@ class TestAgeInHours:
 
     def test_crossing_a_day_boundary(self):
         assert age_in_hours("2026-07-30T12:00:00Z", NOW) == 24.0
+
+
+class TestDiscoveryLift:
+    """What coverage is worth to a story the profile has no opinion about."""
+
+    def test_a_reader_who_asked_for_none_gets_none(self):
+        assert discovery_lift(0.0, 4, 0.0) == 0.0
+
+    def test_a_story_one_portal_ran_is_not_a_find(self):
+        assert discovery_lift(0.0, 1, 0.5) == 0.0
+
+    def test_a_story_the_profile_has_any_opinion_about_is_not_a_find(self):
+        """The same line the badge draws. Where the ranking has something to say,
+        it says it, and coverage does not get to speak instead.
+        """
+        assert discovery_lift(0.0001, 4, 0.5) == 0.0
+
+    def test_at_the_top_of_the_slider_one_extra_portal_is_worth_one_half_life(self):
+        """The stated reading of the constant, and the whole reason it is 0.08.
+        `W_RECENCIA` is the affinity worth one half life, so this says a second
+        portal buys exactly as much as being one half life fresher.
+        """
+        assert discovery_lift(0.0, 2, 0.5) == pytest.approx(W_RECENCIA)
+
+    def test_the_constant_is_what_that_reading_requires(self):
+        assert W_DESCOBERTA * 0.5 == pytest.approx(W_RECENCIA)
+
+    def test_more_portals_lift_more(self):
+        assert discovery_lift(0.0, 4, 0.5) > discovery_lift(0.0, 2, 0.5)
+
+    def test_a_bolder_reader_is_lifted_more(self):
+        assert discovery_lift(0.0, 3, 0.5) > discovery_lift(0.0, 3, 0.1)
+
+
+class TestScoreWithDiscovery:
+    def test_coverage_can_lift_a_story_the_profile_ignores(self):
+        """Both are strangers to this reader and the same age, so the only thing
+        separating them is how many newsrooms thought it was the day's story.
+        """
+        covered = score(0.0, 1.0, discovery_value=discovery_lift(0.0, 3, 0.5))
+        alone = score(0.0, 1.0, discovery_value=discovery_lift(0.0, 1, 0.5))
+
+        assert covered > alone
+
+    def test_the_lift_ages_with_the_story(self):
+        """Inside the decay and not beside it. Outside, a well covered story
+        would be perpetually resurrected, and news dies in 48 hours.
+        """
+        lift = discovery_lift(0.0, 4, 0.5)
+
+        assert score(0.0, 1.0, discovery_value=lift) > score(
+            0.0, 48.0, discovery_value=lift
+        )
+
+    def test_a_reader_at_zero_ranks_exactly_as_before(self):
+        assert score(0.02, 3.0, discovery_value=0.0) == score(0.02, 3.0)

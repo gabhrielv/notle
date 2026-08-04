@@ -2,32 +2,6 @@ import { useCallback, useEffect, useRef } from 'react'
 import type { Card as CardData, Signal } from './api'
 import { sayAge } from './api'
 
-/**
- * How many portals ran the story, as a number in the left gutter.
- *
- * A drawn symbol was tried first and failed at the only job it had: a reader
- * cannot tell three rings from four without stopping to count them, and the
- * whole point of putting this in the gutter is that it reads at a glance while
- * scrolling. The digit says it outright, and the accent ring separates the one
- * case that matters, which is several portals landing on the same event.
- *
- * The rule below it joins the counters into a continuous line down the list, so
- * the column reads as a scale rather than as a stack of loose badges.
- */
-function Mark({ plates }: { plates: number }) {
-  return (
-    <>
-      <span
-        className={`mark${plates > 1 ? ' is-many' : ''}`}
-        aria-label={`${plates} ${plates === 1 ? 'portal' : 'portais'}`}
-      >
-        {plates}
-      </span>
-      <span className="spine" aria-hidden="true" />
-    </>
-  )
-}
-
 /** Inline rather than an icon font, because the app has to render offline. */
 function IconKeep() {
   return (
@@ -161,10 +135,6 @@ export function Card({
       // reveal that outlasts the reader's patience is just a delay.
       style={{ '--i': Math.min(index, 7) } as React.CSSProperties}
     >
-      <div className="gutter">
-        <Mark plates={others.length + 1} />
-      </div>
-
       {/* The cluster's own strongest terms, not an editorial section. One term
           alone reads as a category and gets it wrong, because the strongest term
           by IDF is whichever proper noun is rarest: a story about a candidate

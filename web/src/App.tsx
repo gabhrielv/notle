@@ -103,7 +103,6 @@ function Skeleton() {
     <ul className="feed">
       {[0, 1, 2, 3].map((i) => (
         <li key={i} className="card" style={{ '--i': i } as React.CSSProperties}>
-          <div className="gutter" />
           <div>
             <div className="bone bone-kicker" />
             <div className="bone bone-line" />

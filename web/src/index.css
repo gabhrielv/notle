@@ -6,18 +6,21 @@
  * not publishing, it is showing the arithmetic that put each story where it is,
  * and exposed arithmetic asks for the register of an instrument, not a stand.
  *
- * Three decisions carry the rest: mono for every value the system computed, 2px
- * corners because rounding is decoration that means nothing here, and a gutter
- * on the left where each story carries the number of portals that ran it, joined
- * by a continuous rule. That rule is the signature of the page. It is a vertical
- * scale running the whole feed, and it turns the portal count into something
- * readable at a distance, which is exactly what cross-portal grouping has to be
- * to work as the differentiator.
+ * Two decisions carry the rest: mono for every value the system computed, and
+ * 2px corners because rounding is decoration that means nothing here.
+ *
+ * There was a third. A left gutter carried the number of portals that ran each
+ * story, joined down the list by a continuous rule, and that column was the
+ * signature of the page. It is gone, and the coverage it counted now reaches the
+ * reader as words in the signature line instead. The rule went with it rather
+ * than staying on as a graphic: it existed to join the counters into a scale,
+ * and a scale with nothing on it is decoration, which is the one thing this
+ * sheet does not spend space on.
  *
  * One accent, the crimson this project started with, spent on what the system
- * asserts: the term kicker, the portal counter, the positive reason, and the
- * full stop after the name. Coral is its semantic pair and appears only in the
- * opposite direction, on the negative reason and on hiding.
+ * asserts: the term kicker, the positive reason, and the full stop after the
+ * name. Coral is its semantic pair and appears only in the opposite direction,
+ * on the negative reason and on hiding.
  *
  * The accent was periwinkle for one slice and came back. It was the only cool
  * thing on a sheet whose whole argument is warmth of judgement, and a mark that
@@ -39,7 +42,6 @@
   --against: #b8330f;
   --line: rgba(20, 22, 28, 0.14);
   --line-2: rgba(20, 22, 28, 0.07);
-  --spine: rgba(20, 22, 28, 0.22);
   --glow: rgba(196, 0, 92, 0.1);
 
   --display: 'Newsreader', Georgia, serif;
@@ -67,7 +69,6 @@
     --against: #ffb4a2;
     --line: #3a3d47;
     --line-2: rgba(226, 226, 226, 0.08);
-    --spine: #4c505e;
     --glow: rgba(255, 77, 147, 0.12);
     color-scheme: dark;
   }
@@ -84,7 +85,6 @@
   --against: #ffb4a2;
   --line: #3a3d47;
   --line-2: rgba(226, 226, 226, 0.08);
-  --spine: #4c505e;
   --glow: rgba(255, 77, 147, 0.12);
   color-scheme: dark;
 }
@@ -516,23 +516,13 @@ body {
   list-style: none;
 }
 
-/* The 2rem gutter is fixed and the headline starts after it on every card, which
-   drops the counters into a single column and makes the rule one straight line
-   from the top of the list to the bottom. */
+/* One column since the counter gutter came out, so the headline starts at the
+   edge of the sheet like everything else on the page. */
 .card {
-  display: grid;
-  grid-template-columns: 2rem 1fr;
-  column-gap: 1rem;
   border-bottom: 1px solid var(--line);
   padding: 1.75rem 0;
   animation: rise 0.5s cubic-bezier(0.2, 0.7, 0.3, 1) backwards;
   animation-delay: calc(var(--i, 0) * 55ms);
-}
-
-@media (min-width: 60rem) {
-  .card {
-    column-gap: 1.5rem;
-  }
 }
 
 @keyframes rise {
@@ -542,65 +532,10 @@ body {
   }
 }
 
-.card > *:not(.gutter) {
-  grid-column: 2;
-}
-
 .card.is-leaving {
   opacity: 0;
   transform: translateX(-14px);
   transition: opacity 0.24s, transform 0.24s;
-}
-
-/* ---------- gutter: counter and rule ---------- */
-
-/* A span rather than `1 / -1`. Negative line numbers resolve against the
-   explicit grid, and the card declares no rows, so `-1` is line 1 and the gutter
-   collapses to the height of the kicker, leaving the rule nothing to grow into.
-   The row count is only a ceiling: the card never reaches eight children, and
-   the card sets no row gap, so the unused implicit rows cost nothing. */
-.gutter {
-  grid-column: 1;
-  grid-row: 1 / span 12;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-
-.mark {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 2rem;
-  height: 2rem;
-  flex: none;
-  border: 1px solid var(--line);
-  border-radius: 50%;
-  color: var(--ink-2);
-  font-family: var(--mono);
-  font-size: 0.75rem;
-  font-weight: 700;
-  transition: color 0.2s, border-color 0.2s;
-}
-
-/* A story several portals ran is the product's find, so it is the only thing in
-   the gutter that gets the accent. A single portal stays grey, and the difference
-   between the two states reads without reading the number. */
-.mark.is-many {
-  border-color: var(--accent);
-  color: var(--accent);
-  box-shadow: 0 0 0 3px var(--glow);
-}
-
-.spine {
-  width: 1px;
-  flex: 1;
-  margin-top: 0.75rem;
-  background: var(--spine);
-}
-
-.card:hover .spine {
-  background: var(--accent);
 }
 
 /* ---------- card body ---------- */

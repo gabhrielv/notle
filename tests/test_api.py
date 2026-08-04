@@ -413,6 +413,61 @@ class TestLoad:
         assert asyncio.run(profile.load(env, "u1")) == ({}, {"futebol": 1.0})
 
 
+class TestWeighted:
+    """The document floor that keeps a single article from posing as a taste."""
+
+    def counts(self, **by_term):
+        return {"FROM terms": [{"term": t, "doc_count": n} for t, n in by_term.items()]}
+
+    def test_a_term_the_corpus_saw_once_does_not_describe_a_taste(self, monkeypatch):
+        """Podcast show notes are the case. `episode` and `decel` reach the
+        vector of anybody who likes one podcast article, and being rare is
+        exactly what makes IDF hand them the largest weight it has.
+        """
+        env = patched(monkeypatch, FakeEnv(self.counts(decel=1, selic=200)))
+
+        weighted, factors = asyncio.run(
+            profile.weighted(env, {"decel": 0.5, "selic": 0.5}, 5505)
+        )
+
+        assert "decel" not in weighted
+        assert "decel" not in factors
+        assert "selic" in weighted
+
+    def test_a_term_at_the_floor_is_kept(self):
+        assert profile.PROFILE_MIN_DOCS == 5, "a medicao abaixo foi feita contra 5"
+
+    def test_a_term_the_corpus_never_counted_is_dropped(self, monkeypatch):
+        """Missing from `terms` used to read as `doc_count` zero, which the IDF
+        floor then turned into the largest weight in the vector. Absence of
+        corpus knowledge is not evidence of rarity.
+        """
+        env = patched(monkeypatch, FakeEnv(self.counts(selic=200)))
+
+        weighted, _ = asyncio.run(profile.weighted(env, {"fantasma": 1.0}, 5505))
+
+        assert weighted == {}
+
+    def test_the_returned_factors_cover_exactly_what_survived(self, monkeypatch):
+        """The caller binds the factor per term to complete the dot product, so
+        a factor for a term that is no longer in the vector would weigh a
+        candidate against something the profile stopped claiming.
+        """
+        env = patched(monkeypatch, FakeEnv(self.counts(decel=1, selic=200, juro=40)))
+
+        weighted, factors = asyncio.run(
+            profile.weighted(env, {"decel": 0.3, "selic": 0.4, "juro": 0.3}, 5505)
+        )
+
+        assert set(weighted) == set(factors)
+
+    def test_an_empty_vector_asks_the_database_nothing(self, monkeypatch):
+        env = patched(monkeypatch, FakeEnv())
+
+        assert asyncio.run(profile.weighted(env, {}, 5505)) == ({}, {})
+        assert env.calls == []
+
+
 class TestRank:
     def rows(self):
         return [

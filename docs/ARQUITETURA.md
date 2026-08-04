@@ -324,6 +324,40 @@ Custo: `O(n²)` cossenos com `n` sendo os clusters da sessão, que na prática s
 
 **Consequência para a fatia 7:** a entropia estava planejada para aparecer na tela como diagnóstico do perfil longo. Ela foi removida do código por não ter uso, e antes de voltar precisa ser medida contra perfis longos reais, porque acabou de falhar em fazer exatamente esse trabalho na sessão.
 
+### Um documento não é um gosto
+
+Um termo que o corpus viu uma vez só está no perfil do leitor porque estava no único artigo que ele tocou. Isso não é preferência, é o vetor se reconhecendo, que é o mesmo argumento que mantém fora do feed o cluster já respondido, aplicado a termo em vez de matéria.
+
+O caso que forçou a regra é show notes de podcast. `episode`, `discuss` e `decel` entram no vetor de quem curte um artigo sobre podcast, e a resposta habitual de que "IDF cuida de termo comum" está invertida aqui: **são raros, e IDF amplifica raro**. Com um documento no acervo eles pegam o maior peso que a fórmula sabe dar, 8.05 contra 3.44 de `polícia`.
+
+Não é lista de descarte, porque não há nada errado com as palavras. `episode` nomeia assunto real num artigo sobre lançamento de podcast. O errado é uma ocorrência única pesar mais que um assunto ao qual o corpus volta.
+
+**O teto de IDF foi medido primeiro**, porque é a resposta óbvia. Ele é inerte:
+
+| piso de documentos | pico de precisão@24 | termos de um portal só na explicação |
+|---|---|---|
+| 1, teto nenhum | 0.50 | 58% |
+| 3 | 0.50 | 57% |
+| 10 | 0.50 | 45% |
+| 25 | 0.46 | 40% |
+
+Limitar quanto a raridade vale não ajuda quando o problema é o termo não devia estar no vetor. Contra a explicação ele troca um lixo por outro: `devoção` vira `bonito`, `porto` vira `navio`.
+
+**O que funciona é um piso de frequência documental no perfil**, `PROFILE_MIN_DOCS = 5`:
+
+| piso | termos de um portal só na explicação | pico de precisão@24 |
+|---|---|---|
+| 1, hoje | 58% | 0.50 |
+| 2 | 37% | 0.50 |
+| **5** | **20%** | **0.50** |
+| 10 | 15% | 0.42 |
+
+Cinco é o último valor que não custa nada ao ranking. Dez começa a apagar vocabulário real, e a curva diz isso.
+
+Aplicado **na leitura e não na gravação**, em `profile.weighted`, pela mesma razão que o IDF nunca é materializado: `doc_count` é conhecimento de corpus e se move a cada ingestão. Filtrar na escrita congelaria a resposta de uma passada dentro do perfil de alguém até o próximo sinal reconstruí-lo. Como os quatro vetores passam por essa função, a regra cobre positivo, negativo, sessão e expandido de uma vez. No expandido é inerte de propósito: `term_cooccur` já exige 5 documentos.
+
+**Consequência registrada:** o cosseno entre perfil e candidato sobe com isso, p90 de 0.033 para 0.044 na janela medida. `W_RECENCIA` é definido como o cosseno que vale uma meia-vida e foi posto logo abaixo desse p90, então a regra que o fixa agora aponta um pouco acima de 0.04. Deixado como está, porque o simulador não vê diferença e este documento já recusa mexer em constante com evidência dessa espessura.
+
 **Expansão por co-ocorrência substitui filtragem colaborativa.** Filtragem colaborativa está estruturalmente bloqueada aqui por dois motivos independentes. Primeiro, usuários anônimos num demo de portfólio significam uma população de dezenas de pessoas e uma matriz usuário/item com mais de 99% de células vazias, o que produz coincidência e não recomendação. Segundo, e isso valeria mesmo com um milhão de usuários: **notícia morre em 48 horas**, e colaborativa item-item precisa acumular co-ocorrência ao longo do tempo. Quando o acúmulo termina, o artigo já é lixo histórico. É por isso que sistema de notícia de verdade não faz colaborativa no nível da matéria.
 
 A substituição usa o próprio corpus como população: se `selic` co-ocorre com `câmbio` e `inflação` em milhares de artigos, o perfil expande pra vizinhos que o usuário nunca tocou. Entrega o efeito de descoberta de interesse adjacente, continua explicável ("quem acompanha Selic costuma acompanhar câmbio"), e não depende de multidão nenhuma. **Não é filtragem colaborativa, e o texto não a chama assim.**

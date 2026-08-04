@@ -78,6 +78,49 @@ EXPLICIT = (*POSITIVE, *NEGATIVE)
 # it is recorded as such.
 LONG_HALF_LIFE_DAYS = 60.0
 
+# How many documents a term needs before it is allowed to describe a taste.
+#
+# One document cannot establish a preference. A term the corpus has seen once is
+# in the reader's profile only because it was in the one article they touched, so
+# it says the vector is recognizing itself rather than that a taste exists. It is
+# the same argument that keeps an answered cluster out of the feed, applied to a
+# term instead of a story.
+#
+# The case that forced it is podcast show notes. `episode`, `discuss` and `decel`
+# reach the vector of anybody who likes one podcast article, and the usual answer
+# that "IDF handles common words" is backwards here: these are rare, and IDF
+# amplifies rare. At one document in the archive they take the highest weight the
+# formula can give, which is 8.05 against 3.44 for `polícia`.
+#
+# Not a discard list, because there is nothing wrong with the words. `episode`
+# names a subject in an article about a podcast launch. What is wrong is a single
+# occurrence carrying more weight than a subject the corpus returns to.
+#
+# Measured, against the persona simulator and against what reaches the card:
+#
+#     floor     terms in the reason that only one portal uses     peak precision
+#       1                          58%                                 0.50
+#       2                          37%                                 0.50
+#       5                          20%                                 0.50
+#      10                          15%                                 0.42
+#
+# Five is the last value that costs the ranking nothing. Ten starts deleting
+# real vocabulary, and the curve says so.
+#
+# An IDF ceiling was measured first, because that is the obvious answer and the
+# one the note proposed. It is inert: peak precision is 0.50 at every ceiling
+# from a floor of 1 to 10, and against the reason it moves 58% to 45% while
+# swapping one piece of junk for another. Capping how much rarity is worth does
+# not help when the problem is that the term should not be in the vector at all.
+#
+# Recorded consequence: the profile to candidate cosine moves up with this, p90
+# from 0.033 to 0.044 on the measured window. `W_RECENCIA` is defined as the
+# cosine worth one half life and was set just under that p90, so the rule that
+# fixes it now points slightly higher than 0.04. Left alone, because the
+# simulator shows no difference and the architecture already refuses to move a
+# constant on evidence this thin.
+PROFILE_MIN_DOCS = 5
+
 
 def combine(vectors: list[tuple[dict[str, float], float]]) -> dict[str, float]:
     """Weighted mean of the term vectors of the clusters a reader kept.
@@ -327,6 +370,12 @@ async def weighted(
     reader with a few dozen likes carries more distinct terms than that. The
     profile is not capped here: which terms matter is a question about weights,
     and the weights are what this is on its way to computing.
+
+    The document floor is applied here rather than when the vector is stored,
+    for the same reason IDF is never materialized: `doc_count` is corpus
+    knowledge and it moves on every ingestion run. Filtering at write time would
+    freeze one run's answer into a reader's profile and leave it there until the
+    next signal rebuilt it.
     """
     if not vector:
         return {}, {}
@@ -343,5 +392,10 @@ async def weighted(
         )
         counts.update({row["term"]: row["doc_count"] for row in rows})
 
-    factors = {term: idf(counts.get(term, 0), total_docs) for term in vector}
-    return weigh(vector, counts, total_docs), factors
+    kept = {
+        term: frequency
+        for term, frequency in vector.items()
+        if counts.get(term, 0) >= PROFILE_MIN_DOCS
+    }
+    factors = {term: idf(counts.get(term, 0), total_docs) for term in kept}
+    return weigh(kept, counts, total_docs), factors

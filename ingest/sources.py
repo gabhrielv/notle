@@ -256,7 +256,12 @@ SOURCES = (
     # Consumer coverage. It overlaps the desks above by design: the ask was for
     # more English, and this is where the English volume is.
     Source("9to5Mac", "https://9to5mac.com/feed/", "https://9to5mac.com", language="en"),
-    Source("TechRadar", "https://www.techradar.com/rss", "https://www.techradar.com", language="en"),
+    Source(
+        "TechRadar",
+        "https://www.techradar.com/rss",
+        "https://www.techradar.com",
+        language="en",
+    ),
     Source(
         "MacRumors",
         "https://feeds.macrumors.com/MacRumors-All",

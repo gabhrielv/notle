@@ -7,10 +7,9 @@ or a credential.
 """
 
 from collections import Counter, defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
-
-from concurrent.futures import ThreadPoolExecutor
 
 import httpx
 
@@ -156,7 +155,10 @@ def fetch_drafts(
         payloads = list(pool.map(read, wanted))
 
     drafts: list[ArticleDraft] = []
-    for source, raw in zip(wanted, payloads):
+    # `strict` because `map` returns exactly one result per input: if those two
+    # ever stopped matching, silently truncating to the shorter would drop a
+    # portal's articles without anything saying so.
+    for source, raw in zip(wanted, payloads, strict=True):
         if raw is None:
             continue
         try:

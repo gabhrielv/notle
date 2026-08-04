@@ -473,7 +473,7 @@ flowchart LR
     B --> C[(article_terms<br/>indice invertido)]
     C --> D[Produto escalar<br/>agregado no SQL]
     D --> E[decay + penalidade<br/>+ vetor negativo]
-    E --> F[Slots de descoberta]
+    E --> F[Cobertura entre portais<br/>soma no score]
     F --> G[Feed + explicacao]
     G --> H[Interacoes]
     H --> A
@@ -500,11 +500,49 @@ Isso não é defeito de implementação, é o comportamento correto de um recome
 
 Por isso o estado absorvente é tratado explicitamente:
 
-- **Slots de descoberta.** Uma fração dos slots é reservada a itens de alta qualidade e baixa afinidade, marcados com selo próprio no card. **Qualidade é cobertura entre portais**, o mesmo sinal do onboarding: não depende de popularidade de leitor, o que importa porque o Notle implementa só o modelo de gosto e a ausência de sinal de popularidade é posição de projeto. **Baixa afinidade é afinidade exatamente zero**, e o parágrafo abaixo é por que não é um teto.
-
-  Os slots são **intercalados a passo fixo**, não empilhados no fim. Juntos no rodapé viram seção que o leitor aprende a pular, o que falha do mesmo jeito que não reservar. Quando não há candidato elegível o slot volta para o ranking: promessa de descoberta não é motivo para mostrar notícia pior. Contra o feed ao vivo, slider em 0.25 devolve 6 de 24 cards nas posições 4, 8, 12, 16, 20 e 24.
-- **Controle do usuário.** A fração é um slider, de bolha até descoberta, guardado em `users.discovery_ratio`, com teto de 0.5. Acima disso o feed deixa de ser ordenado por gosto, o que é outro produto e não um ajuste mais forte deste.
+- **A cobertura compete no score.** Uma matéria sobre a qual o perfil não tem opinião ganha uma parcela por quantos portais a publicaram, e sobe se essa soma bastar. **Qualidade é cobertura entre portais**, o mesmo sinal do onboarding: não depende de popularidade de leitor, o que importa porque o Notle implementa só o modelo de gosto e a ausência de sinal de popularidade é posição de projeto. **Baixa afinidade é afinidade exatamente zero**, e o parágrafo abaixo é por que não é um teto.
+- **Controle do usuário.** O peso dessa parcela é um slider, de bolha até descoberta, guardado em `users.discovery_ratio`, com teto de 0.5. Acima disso o feed deixa de ser ordenado por gosto, o que é outro produto e não um ajuste mais forte deste.
 - **Entropia visível.** A entropia do `term_vector` é uma medida direta de concentração de gosto, e é exibida como diagnóstico: "seu feed está concentrado em 3 temas".
+
+### A cota comprava vaga, e por isso o selo não informava nada
+
+Até esta fatia o slider reservava uma fração das posições e preenchia cada uma com o melhor candidato que passasse num filtro. Três consequências, todas medidas.
+
+**A contagem vinha do slider, não da notícia.** Dos 28400 pares perfil/candidato, 88,4% têm afinidade exatamente zero e 7,9% saíram em dois portais ou mais, então 6,8% passavam nos dois filtros. São ~97 candidatos elegíveis por perfil para no máximo 12 vagas: a oferta nunca acabava, o filtro nunca limitava, e o selo só conseguia repetir uma escolha que o leitor tinha acabado de fazer. Em 50%, metade da página vinha selada com perfil vazio e com perfil de 87 termos igualmente, 12 de 24 nos dois casos.
+
+**A passada fixa aparecia na tela.** Intercalar a cada `round(1 / ratio)` posições é, em 50%, uma matéria sim e uma não. Isso foi relatado por quem usou como "1 a cada 2 matérias eram descoberta", que é o mecanismo sendo visto em vez do feed.
+
+**Os rótulos estavam com as cores trocadas**, e desde antes: `bolha` usava o acento, a cor do que o sistema afirma, e `descoberta` usava `--against`, que a folha reserva para a razão negativa e para ocultar. A tela argumentava o contrário do produto. O defeito era legível enquanto o acento era frio e o aviso quente, e ficou invisível quando os dois viraram vermelho.
+
+A cobertura passou a somar no score em vez de comprar vaga:
+
+```
+score = (W_GOSTO*afinidade + W_RECENCIA + W_DESCOBERTA*slider*alcance) * decay(idade)
+        - BETA*rejeição - penalidade
+```
+
+`alcance = portais - 1`, então matéria de um portal ganha zero e a barra virou aritmética em vez de constante. O termo só existe com afinidade exatamente zero, que é a mesma linha do selo, e fica **dentro** do decay: fora dele uma matéria velha e muito coberta ressuscitaria.
+
+**`W_DESCOBERTA = 0.04`**, com leitura declarada:
+
+> No máximo do slider, dois portais a mais valem uma meia-vida de frescor.
+
+Porque `0.04 × 0.5 × 2 = W_RECENCIA`.
+
+O primeiro valor foi 0.08, pela leitura mais bonita de um portal por meia-vida, e **o simulador recusou**:
+
+| `W_DESCOBERTA` | pico em 8 rodadas, no teto do slider | selados de 24 |
+|---|---|---|
+| 0.08 | **0.00** | 24 |
+| **0.04** | **0.54** | **11** |
+| 0.02 | 0.50 | 7 |
+| 0.01 | 0.54 | 3 |
+
+Em 0.08 o topo do slider não inclina a página, ele a toma: os 24 cards chegam por cobertura e a persona não encontra nada do que veio buscar. O teto de 0.5 existe para o extremo do controle ser forte, não para o gosto deixar de existir ali.
+
+As diferenças entre os sobreviventes são um card em vinte e quatro e são lidas como ruído. **Não são evidência de que descoberta melhora precisão**, e não poderiam ser: uma métrica que premia convergência tem que punir descoberta, como este documento já registra para `W_COOCOR`. O que a varredura resolve é a distância entre colapsar e não colapsar.
+
+**Isso só ficou visível porque o simulador foi consertado antes.** Ele reimplementava a expressão do score em vez de chamá-la, então o termo novo não estava na aritmética que ele rodava, e a curva voltava idêntica. Este documento afirmava que os dois lados dividem a mesma aritmética; para esse termo não dividiam. Agora ele chama `discovery_lift`, e o slider é uma das constantes que a busca em grade pode mover.
 
 ### O selo de descoberta media com uma régua e prometia com outra
 
@@ -608,7 +646,7 @@ A fórmula tem mais de quinze constantes (`w_longo`, `w_sessao_max`, `k_concentr
 Sem usuários, sem histórico e sem A/B, a saída é **simular usuários com gosto conhecido**. Uma persona tem um vetor de interesse verdadeiro, se comporta de forma plausível (curte o que é próximo dele com ruído, esconde o que é distante), e o sistema roda contra ela medindo coisas que têm resposta certa:
 
 - o perfil aprendido converge pro vetor verdadeiro, e em quantas interações
-- a entropia do perfil despenca com o tempo, ou os slots de descoberta seguram
+- a entropia do perfil despenca com o tempo, ou a cobertura no score segura
 - depois de um `hide`, os termos daquele tema realmente caem
 - com que meia-vida a notícia de hoje ganha da notícia boa de anteontem
 

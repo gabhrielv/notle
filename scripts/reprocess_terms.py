@@ -56,19 +56,28 @@ def languages() -> dict[str, str]:
     return {source.feed_url: source.language for source in SOURCES}
 
 
-def rewrite_summary(client: D1Client, article_id: int, summary: str) -> None:
-    """Replaces a stored summary that still carries the portal's invitation.
+def rewrite_text(client: D1Client, article_id: int, title: str, summary: str) -> None:
+    """Replaces stored text that still carries the portal's invitation.
 
-    Three places hold it and all three have to move together. `articles.summary`
-    is what the card shows the reader, `article_search` is a plain FTS5 table
-    with its own copy rather than an external content one, and `article_terms`
-    is rebuilt from the same text just below. Leaving the search index behind
-    would make a query for the invitation return articles whose visible text no
-    longer contains it.
+    Four places hold it and all four have to move together. `articles` is what
+    the card shows the reader, `article_search` is a plain FTS5 table with its
+    own copy rather than an external content one, and `article_terms` is rebuilt
+    from the same text below. Leaving the search index behind would make a query
+    for the invitation return articles whose visible text no longer contains it.
+
+    The title is cleaned here and not only the summary. Arriving articles have
+    had both cleaned since the rule existed, because `clean_summary` runs over
+    the title too, but this job only ever rewrote the summary and then
+    lemmatized the stored title raw. So the one place carrying the invitation
+    into today's corpus was the half of the text this job read without fixing.
     """
-    client.query("UPDATE articles SET summary = ? WHERE id = ?", [summary, article_id])
     client.query(
-        "UPDATE article_search SET summary = ? WHERE rowid = ?", [summary, article_id]
+        "UPDATE articles SET title = ?, summary = ? WHERE id = ?",
+        [title, summary, article_id],
+    )
+    client.query(
+        "UPDATE article_search SET title = ?, summary = ? WHERE rowid = ?",
+        [title, summary, article_id],
     )
 
 
@@ -123,15 +132,16 @@ def run(client: D1Client | None = None, dry_run: bool = False):
         for row in page:
             language = by_feed.get(row["feed_url"], "pt")
 
-            # The stored summary predates the rule that strips the portal's
+            # The stored text predates the rule that strips the portal's
             # invitation, so it is fixed here before it is read for terms.
+            title = strip_promotion(row["title"] or "")
             summary = strip_promotion(row["summary"] or "")
-            if summary != (row["summary"] or ""):
+            if (title, summary) != ((row["title"] or ""), (row["summary"] or "")):
                 cleaned += 1
                 if not dry_run:
-                    rewrite_summary(client, row["id"], summary)
+                    rewrite_text(client, row["id"], title, summary)
 
-            lemmas = lemmatize(f"{row['title']}. {summary}", language)
+            lemmas = lemmatize(f"{title}. {summary}", language)
             frequencies = term_frequencies([x for x in lemmas if x not in banned])
 
             seen += 1
@@ -163,5 +173,5 @@ if __name__ == "__main__":
     verb = "reescreveria" if args.dry_run else "reescreveu"
     print(
         f"{seen} artigos lidos, {verb} {changed}, vocabulario de {vocabulary} termos, "
-        f"{cleaned} resumos limpos de chamada promocional"
+        f"{cleaned} textos limpos de chamada promocional"
     )

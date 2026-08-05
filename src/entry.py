@@ -19,6 +19,7 @@ from workers import Response
 
 from api import browse, feed, onboarding, profile, session, signals, users
 from api.db import execute, query_one
+from ranking.score import DISCOVERY_CAP
 
 # What a reader is allowed to record. A hide both excludes its own cluster and
 # feeds the negative vector, but either way it is the same event in the same
@@ -253,7 +254,7 @@ async def write_discovery(request, env):
     # Half the page is the most that can be reserved. Past that the feed stops
     # being ordered by taste at all, which is a different product rather than a
     # stronger setting of this one.
-    ratio = min(max(float(raw), 0.0), 0.5)
+    ratio = min(max(float(raw), 0.0), DISCOVERY_CAP)
     await execute(env, "UPDATE users SET discovery_ratio = ? WHERE id = ?", [ratio, user["id"]])
 
     headers = dict(PRIVATE)

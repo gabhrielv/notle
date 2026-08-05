@@ -171,6 +171,14 @@ W_COOCOR = 0.25
 # What the sweep settles is the distance between collapsing and not.
 W_DESCOBERTA = 0.04
 
+# Where the reader's control ends.
+#
+# Past half the page the feed stops being ordered by taste at all, which is a
+# different product rather than a stronger setting of this one. Named here rather
+# than left as a literal in the handler that clamps it, because the lift measures
+# travel as a fraction of this and the two have to agree.
+DISCOVERY_CAP = 0.5
+
 # News dies in 48 hours. At a 12 hour half life a story from two days ago carries
 # 6% of the weight of one from now, which is small enough to keep the feed from
 # looking stale and large enough that a good old story can still outrank a dull

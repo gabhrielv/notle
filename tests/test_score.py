@@ -12,6 +12,7 @@ import pytest
 
 from ranking.score import (
     BETA,
+    DISCOVERY_CAP,
     HALF_LIFE_HOURS,
     IMPRESSION_LIMIT,
     NEGATIVE_FLOOR,
@@ -328,6 +329,12 @@ class TestDiscoveryLift:
 
     def test_the_constant_is_what_that_reading_requires(self):
         assert W_DESCOBERTA * 0.5 * 2 == pytest.approx(W_RECENCIA)
+
+    def test_the_cap_is_where_the_control_ends(self):
+        """The handler clamps to this and the curve measures travel against it.
+        The same number in two files under no name is how they come apart.
+        """
+        assert DISCOVERY_CAP == 0.5
 
     def test_more_portals_lift_more(self):
         assert discovery_lift(0.0, 4, 0.5) > discovery_lift(0.0, 2, 0.5)

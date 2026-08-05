@@ -128,7 +128,16 @@ def rank(reader: Reader, snapshot, constants: Constants, now_hours: float) -> li
         ) * constants.decay(age) - constants.beta * penalty
 
         scored.append(
-            {**card, "cluster_id": cluster_id, "score": value, "discovery": lift > 0}
+            {
+                **card,
+                "cluster_id": cluster_id,
+                "score": value,
+                # The same two halves the feed uses. A simulator that names
+                # discovery on its own terms measures a system that does not
+                # exist, and that gap is what hid the last collapse until it
+                # reached production.
+                "discovery": lift > 0 and bool(kept),
+            }
         )
 
     scored.sort(key=lambda card: -card["score"])

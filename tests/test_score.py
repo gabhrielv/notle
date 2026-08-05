@@ -336,6 +336,27 @@ class TestDiscoveryLift:
         """
         assert DISCOVERY_CAP == 0.5
 
+    def test_the_curve_is_concave_so_the_first_notch_is_not_dead(self):
+        """The property the whole change exists for. Linear in the slider, the
+        lower third delivered nothing: measured over 18 profiles, a tenth of the
+        travel moved 0.2 cards of 24 while the last tenth moved 1.4. Concave, the
+        first tenth is worth more than the last, which is what makes moving the
+        control do something wherever it is.
+        """
+        primeiro = discovery_lift(0.0, 2, 0.1) - discovery_lift(0.0, 2, 0.0)
+        ultimo = discovery_lift(0.0, 2, 0.5) - discovery_lift(0.0, 2, 0.4)
+
+        assert primeiro > ultimo
+
+    def test_the_far_end_is_where_it_always_was(self):
+        """The curve changes the path and not the destination, so the reading
+        the constant was chosen for still holds at the cap.
+        """
+        assert discovery_lift(0.0, 3, DISCOVERY_CAP) == pytest.approx(W_RECENCIA)
+
+    def test_it_still_rises_with_the_slider(self):
+        assert discovery_lift(0.0, 2, 0.4) > discovery_lift(0.0, 2, 0.1)
+
     def test_more_portals_lift_more(self):
         assert discovery_lift(0.0, 4, 0.5) > discovery_lift(0.0, 2, 0.5)
 

@@ -271,6 +271,14 @@ def scored(
         # What coverage is worth here, and the reason the badge can name itself.
         # Zero unless the reader asked for some, more than one portal ran it, and
         # the profile has nothing to say about it.
+        #
+        # Naming it also needs a profile to contrast against, which is why the
+        # flag below asks for both. The lift still acts for a visitor who has
+        # said nothing, so their cold start is ordered by what the day covered
+        # rather than by the clock; it just is not called a discovery, because
+        # "none of your strongest terms appear here" says nothing to somebody who
+        # has no terms. Measured before this, a new visitor at the default was
+        # handed 16 marked cards out of 24.
         lift = discovery_lift(affinity, row.get("sources", 1), discovery_ratio)
 
         # A resemblance the ranking refused to act on is one the card must not
@@ -289,7 +297,7 @@ def scored(
                 )
                 * damping,
                 "similarity": affinity,
-                "discovery": lift > 0,
+                "discovery": lift > 0 and profile_norm > 0,
                 "penalty": penalty,
                 "momentum": momentum,
                 "nearby": nearby,

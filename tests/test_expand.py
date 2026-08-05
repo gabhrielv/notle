@@ -117,11 +117,14 @@ class TestDiscoveryOnThePage:
             for i, n in enumerate(sources)
         ]
 
-    def page(self, sources, ratio):
+    def page(self, sources, ratio, profile_norm=2.0):
+        """`profile_norm` above zero is a reader who already has a taste. Zero is
+        somebody who does not yet, and the badge does not speak to them.
+        """
         return feed.scored(
             self.rows(sources),
             {},
-            0.0,
+            profile_norm,
             set(),
             datetime(2026, 7, 31, 12, tzinfo=UTC),
             discovery_ratio=ratio,
@@ -155,3 +158,28 @@ class TestDiscoveryOnThePage:
 
         assert feed.interleave(everything, 0) == everything[: feed.PAGE]
         assert feed.interleave(everything, feed.PAGE)[0]["cluster_id"] == feed.PAGE
+
+    def test_a_reader_with_no_taste_is_not_told_what_is_outside_it(self):
+        """The badge claims a contrast: nothing among your strongest terms
+        appears here. With no terms the sentence is empty, and printing it on
+        most of the page is the same failure the quota had, a label that
+        distinguishes nothing. Measured live at the default it was 16 cards of
+        24.
+        """
+        page = self.page([2, 3, 4], 0.5, profile_norm=0.0)
+
+        assert not any(card["discovery"] for card in page)
+
+    def test_coverage_still_orders_a_feed_it_cannot_name(self):
+        """A better cold start than the clock, using the signal the onboarding
+        already trusts. The lift acts; only the naming waits for a profile.
+        """
+        page = self.page([1, 4], 0.5, profile_norm=0.0)
+
+        assert page[0]["cluster_id"] == 1
+
+    def test_a_reader_with_taste_is_told(self):
+        page = self.page([1, 3], 0.5)
+        marked = {card["cluster_id"] for card in page if card["discovery"]}
+
+        assert marked == {1}

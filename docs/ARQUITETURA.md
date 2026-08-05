@@ -544,6 +544,43 @@ As diferenças entre os sobreviventes são um card em vinte e quatro e são lida
 
 **Isso só ficou visível porque o simulador foi consertado antes.** Ele reimplementava a expressão do score em vez de chamá-la, então o termo novo não estava na aritmética que ele rodava, e a curva voltava idêntica. Este documento afirmava que os dois lados dividem a mesma aritmética; para esse termo não dividiam. Agora ele chama `discovery_lift`, e o slider é uma das constantes que a busca em grade pode mover.
 
+### Depois disso, o controle quebrou nas duas pontas
+
+O termo funcionava e o controle não, de formas opostas conforme o leitor tivesse ou não um gosto registrado.
+
+**Visitante novo via quase tudo selado.** No padrão de `discovery_ratio = 0.15`, 16 dos 24 cards vinham marcados. Isso é o pior lugar possível para esse defeito: todo visitante é um cold start, e essa é a única tela que a maioria das pessoas vai ver.
+
+**Quem tinha perfil não via nada até metade do curso.** Medido ao vivo com 148 termos: 0 selados em 0, em 0.1 e em 0.25, e 9 só em 0.5. A mesma posição do controle significava coisas opostas antes e depois do onboarding.
+
+**A primeira explicação estava errada, e a medição a derrubou.** A suspeita foi que "afinidade exatamente zero" escalaria com o tamanho do perfil. Não escala:
+
+| perfil | termos | candidatos com afinidade zero |
+|---|---|---|
+| vazio | 0 | 1423 (100%) |
+| 1 cluster | 23 | 1185 (83%) |
+| 5 clusters | 147 | 1305 (92%) |
+| 40 clusters | 937 | 1092 (77%) |
+
+Fica entre 77% e 92% para qualquer perfil real. **O que muda não é quem é elegível, é contra quem a cobertura compete.** Com perfil vazio ninguém tem afinidade, então o levantamento ordena a página sozinho; com perfil real, um levantamento de 0.01 perde para afinidades de 0.02 a 0.05.
+
+Duas correções, uma para cada ponta.
+
+**A cobertura ordena o feed de quem não tem perfil, mas não é nomeada ali.** O selo alega um contraste, "nenhum dos seus termos mais fortes aparece aqui", e para quem não tem termo nenhum a frase é vazia. O levantamento continua agindo, então o cold start é ordenado pelo que o dia cobriu em vez de pelo relógio, que é uma abertura melhor e usa o sinal que o onboarding já usa. O que espera por um perfil é o nome.
+
+**O curso do controle virou raiz quadrada.** Lido direto do slider, o terço inferior era inerte. Varrido sobre 18 perfis de 3, 10 e 20 clusters, contando selados numa página de 24:
+
+| expoente | 0,05 | 0,1 | 0,2 | 0,3 | 0,4 | 0,5 |
+|---|---|---|---|---|---|---|
+| 1,0 | 0,2 | 0,2 | 1,3 | 3,1 | 5,1 | 6,5 |
+| **0,5** | **0,7** | **1,9** | **3,5** | **4,9** | **6,1** | **6,5** |
+| 0,25 | 2,7 | 4,0 | 5,0 | 6,0 | 6,3 | 6,5 |
+
+No fim do curso a raiz vale 1, então a expressão é a de sempre e a leitura de `W_DESCOBERTA` continua valendo ali. O que muda é o caminho: cada décimo do curso passa a mover cerca de um card e meio em vinte e quatro.
+
+**A saturação perto de 6,5 é oferta, não desenho.** Nenhum expoente passa disso, porque são 112 clusters com dois ou mais portais em 1423 e só parte deles supera o ranking. O controle satura porque o dia acabou, que é a propriedade pedida quando a contagem passou a seguir a notícia. Fica registrado para ninguém tentar recalibrar a curva atrás de um número maior.
+
+O teto do controle deixou de ser um literal dentro do handler e virou `DISCOVERY_CAP`, porque a curva mede o percurso como fração dele e o mesmo número em dois arquivos sem nome é como os dois passam a discordar.
+
 ### O selo de descoberta media com uma régua e prometia com outra
 
 O valor de afinidade que o card carrega é completado a partir de um produto escalar sobre os **20 termos mais fortes do perfil**, porque são esses que a consulta amarra. Ele não é o cosseno contra o perfil inteiro, e a diferença não é pequena. Medido sobre 20 perfis contra os candidatos da janela, 18706 pares com sobreposição:
